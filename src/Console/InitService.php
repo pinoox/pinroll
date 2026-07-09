@@ -8,6 +8,10 @@ use Pinoox\Pinroll\Support\PinrollAutoloader;
 use Pinoox\Pinroll\Support\ProjectPaths;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
+/**
+ * Non-interactive scaffold: pinroll/ config + .env key stubs.
+ * Connection / PinGate upload is pinroll:connect.
+ */
 final class InitService
 {
     public function __construct(
@@ -16,77 +20,116 @@ final class InitService
     }
 
     /**
-     * @return array{config: string, target: string, gate_configured?: bool, ready_for_push?: bool}
+     * @return array{
+     *     config: string,
+     *     target: string,
+     *     created: list<string>,
+     *     env_keys: list<string>,
+     *     env_created: list<string>
+     * }
      */
     public function run(
         string $targetName,
-        bool $interactive,
-        bool $force,
+        bool $interactive = false,
+        bool $force = false,
         ?SymfonyStyle $io = null,
         bool $wizard = false,
     ): array {
+        unset($interactive, $wizard);
+
         PinrollAutoloader::register($this->platformRoot);
-        (new ProjectInitializer($this->platformRoot, $force))->init();
+        $created = (new ProjectInitializer($this->platformRoot, $force))->init();
 
         $paths = new NativePathResolver($this->platformRoot);
         $configFile = ProjectPaths::configFile($paths);
-
         Pinroll::configure([], $paths);
-        $needsSetup = $force || !is_file($configFile);
 
-        if (!$needsSetup) {
-            try {
-                Pinroll::targets()->resolve($targetName);
-            } catch (\Throwable) {
-                $needsSetup = true;
+        // Ensure production-style target with env-backed ftp + gate
+        if ($force || !is_file($configFile)) {
+            ConfigWriter::write($configFile, SampleConfig::targets());
+            if (!in_array($configFile, $created, true)) {
+                $created[] = $configFile;
             }
         }
 
-        // -w always offers transport/credentials (even if config already exists)
-        if ($wizard && $interactive && $io !== null) {
-            $io->section('Pinroll wizard');
-            if (is_file($configFile) && !$force) {
-                $redo = $io->confirm('Update transport / FTP / SSH for "' . $targetName . '"?', true);
-            } else {
-                $redo = true;
-            }
+        $envKeys = self::envStubKeys($targetName);
+        $envCreated = self::ensureEnvKeys($this->platformRoot, $envKeys);
 
-            if ($redo || $needsSetup) {
-                $hadGate = false;
-                if (is_file($configFile)) {
-                    try {
-                        $raw = Pinroll::targets()->raw($targetName);
-                        $hadGate = \Pinoox\Pinroll\Target\TargetGate::isConfigured($raw);
-                    } catch (\Throwable) {
-                        // new target
-                    }
-                }
-
-                $targets = ConnectionSetup::collect($io, $targetName, $this->platformRoot);
-                if ($hadGate) {
-                    $targets[$targetName]['gate'] = SampleConfig::gateBlock($targetName);
-                }
-                ConfigWriter::write($configFile, $targets);
-                Pinroll::configure([], $paths);
-                $needsSetup = false;
+        if ($io !== null && $envCreated !== []) {
+            $io->writeln('  <fg=green>Added</> .env keys:');
+            foreach ($envCreated as $key) {
+                $io->writeln('    <comment>' . $key . '</comment>');
             }
-        } elseif ($needsSetup && $interactive && $io !== null) {
-            $targets = ConnectionSetup::collect($io, $targetName, $this->platformRoot);
-            ConfigWriter::write($configFile, $targets);
-        } elseif ($needsSetup) {
-            ConfigWriter::write($configFile, SampleConfig::targets(ProjectPackages::defaultPackage($this->platformRoot)));
         }
 
-        $result = [
+        return [
             'config' => $configFile,
             'target' => $targetName,
+            'created' => array_values(array_filter($created)),
+            'env_keys' => array_keys($envKeys),
+            'env_created' => $envCreated,
         ];
+    }
 
-        if ($wizard && $interactive && $io !== null) {
-            $gate = GateSetupWizard::run($io, $this->platformRoot, $targetName, $configFile);
-            $result = array_merge($result, $gate);
+    /**
+     * @return array<string, string>
+     */
+    public static function envStubKeys(string $targetName = 'production'): array
+    {
+        return [
+            ConfigWriter::envKeyFor($targetName, 'host', 'ftp') => '',
+            ConfigWriter::envKeyFor($targetName, 'user', 'ftp') => '',
+            ConfigWriter::envKeyFor($targetName, 'password', 'ftp') => '',
+            ConfigWriter::envKeyFor($targetName, 'url', 'pinion') => '',
+            ConfigWriter::envKeyFor($targetName, 'token', 'pinion') => '',
+        ];
+    }
+
+    /**
+     * Create missing keys only (never overwrite existing values).
+     *
+     * @param array<string, string> $keys
+     * @return list<string> newly created keys
+     */
+    public static function ensureEnvKeys(string $projectRoot, array $keys): array
+    {
+        $envPath = rtrim($projectRoot, '/') . '/.env';
+        $missing = [];
+
+        foreach ($keys as $key => $default) {
+            if (self::envKeyExists($envPath, $key)) {
+                continue;
+            }
+            $missing[$key] = $default;
         }
 
-        return $result;
+        if ($missing === []) {
+            return [];
+        }
+
+        EnvFileWriter::merge($envPath, $missing);
+
+        return array_keys($missing);
+    }
+
+    private static function envKeyExists(string $path, string $key): bool
+    {
+        if (!is_file($path)) {
+            return false;
+        }
+
+        $lines = file($path, FILE_IGNORE_NEW_LINES);
+        if ($lines === false) {
+            return false;
+        }
+
+        $pattern = '/^' . preg_quote($key, '/') . '\s*=/';
+        foreach ($lines as $line) {
+            if (preg_match($pattern, (string) $line)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

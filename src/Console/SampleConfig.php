@@ -22,8 +22,9 @@ final class SampleConfig
     public static function productionTarget(string $name = 'production'): array
     {
         return [
-            'dir' => '',
+            'dir' => 'public_html',
             'via' => 'ftp',
+            'gate' => self::gateBlock($name),
             'ftp' => [
                 'host' => ['_env' => ConfigWriter::envKeyFor($name, 'host', 'ftp'), 'default' => ''],
                 'user' => ['_env' => ConfigWriter::envKeyFor($name, 'user', 'ftp'), 'default' => ''],
@@ -33,8 +34,6 @@ final class SampleConfig
     }
 
     /**
-     * Top-level gate block for a target.
-     *
      * @return array<string, mixed>
      */
     public static function gateBlock(string $name, string $gateUrl = ''): array
@@ -46,7 +45,7 @@ final class SampleConfig
     }
 
     /**
-     * @deprecated Use gateBlock() — pinion credentials live in top-level gate
+     * @deprecated Use gateBlock()
      * @return array<string, mixed>
      */
     public static function pinionBlock(string $name, string $gateUrl = ''): array

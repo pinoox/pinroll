@@ -16,7 +16,7 @@ final class ConfigTemplate
  * gate — PinGate for this target (url + token). Shared by all transports for apply / pinion.
  * ftp / ssh / pinion — connection credentials only (no nested gate).
  *
- * Workflow: pinroll:vendor → pinroll:gate → pinroll:push {target} -a
+ * Workflow: pinroll:init → fill .env FTP → pinroll:connect → pinroll:deploy
  */
 
 PHP;

@@ -72,7 +72,7 @@ test('target gate setup guide mentions top-level gate', function () {
         ->toContain('pinroll:gate production')
         ->toContain("'gate' => [")
         ->toContain('pinroll:apply production')
-        ->toContain('pinroll:push production -a')
+        ->toContain('pinroll:deploy production')
         ->toContain('pinoox.com')
         ->not->toContain("'ftp' => [");
 });

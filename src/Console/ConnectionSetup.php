@@ -234,7 +234,7 @@ final class ConnectionSetup
             return;
         }
 
-        EnvFileWriter::merge($envPath, $toWrite, '# Pinroll');
+        EnvFileWriter::merge($envPath, $toWrite);
         $io->writeln('  <fg=green>Updated</> .env transport keys:');
         foreach (array_keys($toWrite) as $key) {
             $io->writeln('    <comment>' . $key . '</comment>');

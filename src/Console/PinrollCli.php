@@ -148,42 +148,75 @@ final class PinrollCli
         }
 
         $io->newLine();
-        $io->writeln('  <fg=gray>Next:</> <comment>php pinoox pinroll:push ' . $target . ' -a</comment>');
+        $io->writeln('  <fg=gray>Next:</> <comment>php pinoox pinroll:deploy ' . $target . '</comment>');
+        $io->writeln('  <fg=gray>or push only:</> <comment>php pinoox pinroll:push ' . $target . '</comment>');
     }
 
     /**
-     * @param array{config?: string, target?: string} $data
+     * @param array{
+     *     config?: string,
+     *     target?: string,
+     *     env_keys?: list<string>,
+     *     env_created?: list<string>
+     * } $data
      */
     public static function printInitSummary(SymfonyStyle $io, array $data): void
     {
         $target = (string) ($data['target'] ?? 'production');
 
-        if (!empty($data['ready_for_push'])) {
-            $io->success('Pinroll ready for push + apply');
-            $io->writeln('  <comment>php pinoox pinroll:push ' . $target . ' -a</comment>');
-
-            return;
-        }
-
-        $io->success('Pinroll ready');
+        $io->success('Pinroll initialized');
 
         if (!empty($data['config'])) {
             $io->writeln('  <fg=green>config</>  ' . self::relPath($data['config']));
         }
 
         $io->newLine();
+        $io->section('Next steps');
+        $io->writeln([
+            '  <fg=yellow>1.</> Set FTP credentials in <comment>.env</comment>:',
+            '       PINROLL_' . strtoupper(preg_replace('/[^a-zA-Z0-9]+/', '_', $target) ?: 'PRODUCTION') . '_HOST=',
+            '       PINROLL_' . strtoupper(preg_replace('/[^a-zA-Z0-9]+/', '_', $target) ?: 'PRODUCTION') . '_USER=',
+            '       PINROLL_' . strtoupper(preg_replace('/[^a-zA-Z0-9]+/', '_', $target) ?: 'PRODUCTION') . '_PASSWORD=',
+            '',
+            '  <fg=yellow>2.</> Connect & upload PinGate:',
+            '       <comment>php pinoox pinroll:connect</comment>',
+            '',
+            '  <fg=yellow>3.</> Go live:',
+            '       <comment>php pinoox pinroll:deploy ' . $target . '</comment>',
+            '       <fg=gray>or upload only:</> <comment>php pinoox pinroll:push ' . $target . '</comment>',
+        ]);
+    }
 
-        if (!empty($data['gate_configured'])) {
-            $io->writeln('  <fg=gray>PinGate configured — finish upload if needed, then:</>');
-            $io->writeln('  <fg=gray>1.</> pinroll:check ' . $target);
-            $io->writeln('  <fg=gray>2.</> pinroll:push ' . $target . ' -a');
-        } else {
-            $io->writeln('  <fg=gray>First-time host setup:</>');
-            $io->writeln('  <fg=gray>1.</> pinroll:vendor  <fg=gray>→ export vendor.zip (core + deps; replace on host when updating)</>');
-            $io->writeln('  <fg=gray>2.</> pinroll:gate ' . $target . '  <fg=gray>→ FTP upload PinGate (or -z for zip)</>');
-            $io->writeln('  <fg=gray>3.</> pinroll:check ' . $target);
-            $io->writeln('  <fg=gray>4.</> pinroll:push ' . $target . ' -a');
+    /**
+     * @param array<string, mixed> $data
+     */
+    public static function printConnectResult(SymfonyStyle $io, array $data): void
+    {
+        $target = (string) ($data['target'] ?? 'production');
+        $uploaded = (bool) ($data['uploaded'] ?? false);
+        $gateUrl = (string) ($data['gate_url'] ?? '');
+
+        $io->newLine();
+        $io->block(
+            $uploaded ? 'Setup complete — PinGate uploaded' : 'Setup complete — PinGate ready',
+            'OK',
+            'fg=black;bg=green',
+            ' ',
+            true,
+        );
+
+        if ($gateUrl !== '') {
+            $io->writeln('  <fg=gray>URL</>  <comment>' . self::escape($gateUrl) . '</comment>');
         }
+
+        if ($uploaded) {
+            $io->writeln('  <fg=green>Uploaded</> pingate.php + gate/ via FTP');
+        }
+
+        $io->newLine();
+        $io->writeln('  Go live (push + apply):');
+        $io->writeln('  <comment>php pinoox pinroll:deploy ' . $target . '</comment>');
+        $io->writeln('  <fg=gray>or</> <comment>php pinoox pinroll:push ' . $target . '</comment> then <comment>php pinoox pinroll:apply ' . $target . '</comment>');
     }
 
     /**
@@ -231,14 +264,13 @@ final class PinrollCli
             $io->newLine();
             $io->section('Install on server');
             $io->writeln([
-                '<fg=gray>Option A — PinGate (recommended for FTP):</>',
-                '  <fg=yellow>php pinoox pinroll:gate</> <fg=gray>→ FTP upload PinGate, add top-level gate { url, token }</>',
-                '  <fg=yellow>php pinoox pinroll:push production -a</>',
+                '<fg=gray>Go live in one step:</>',
+                '  <fg=yellow>php pinoox pinroll:deploy production</>',
                 '',
-                '<fg=gray>Option B — apply from laptop (PinGate):</>',
+                '<fg=gray>Or apply the upload you just pushed:</>',
                 '  <fg=yellow>php pinoox pinroll:apply production</>',
                 '',
-                '<fg=gray>Option C — SSH shell on host:</>',
+                '<fg=gray>SSH shell on host:</>',
                 '  <fg=yellow>cd</> <comment>~/public_html</comment>  <fg=gray>(site root)</>',
                 '  <fg=yellow>php pinoox pinroll:apply --local</>',
             ]);

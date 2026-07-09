@@ -34,6 +34,7 @@ final class PinGateExporter
         bool $zip = true,
         ?string $hostDir = null,
         bool $keepLocal = false,
+        bool $withVendor = false,
     ): array {
         $hostDir = HostDir::normalize($hostDir ?? (string) ($gateConfig['dir'] ?? $gateConfig['host_dir'] ?? $gateConfig['install'] ?? ''));
 
@@ -53,7 +54,16 @@ final class PinGateExporter
         $indexPath = $this->copyTemplate('index.php', $gateDir . '/index.php');
         $bootstrapPath = $this->copyTemplate('bootstrap.php', $gateDir . '/bootstrap.php');
         $htaccessPath = $this->copyTemplate('gate.htaccess', $gateDir . '/.htaccess');
-        $this->bundleGateVendor($gateDir);
+
+        // Default: use platform vendor/ on the host (fast). Optional fallback only.
+        $vendorDir = $gateDir . '/vendor';
+        if ($withVendor) {
+            $this->bundleGateVendor($gateDir);
+        } elseif (is_dir($vendorDir)) {
+            PushProgress::arrow('Removing leftover gate/vendor (using platform vendor)…');
+            $this->removeDir($vendorDir);
+        }
+
         $entryPath = $pinrollDir . '/' . HostDir::GATE_ENTRY;
         $this->copyTemplate('entry.php', $entryPath);
 
@@ -62,6 +72,11 @@ final class PinGateExporter
 
         $zipPath = null;
         if ($zip) {
+            $directories = [];
+            if ($withVendor && is_dir($vendorDir)) {
+                $directories[$vendorDir] = HostDir::GATE_DIR . '/vendor';
+            }
+
             $zipPath = $this->createZip($target, [
                 $entryPath => HostDir::GATE_ENTRY,
                 $bootstrapPath => HostDir::GATE_DIR . '/bootstrap.php',
@@ -69,7 +84,7 @@ final class PinGateExporter
                 $configPath => HostDir::GATE_DIR . '/pingate.php',
                 $htaccessPath => HostDir::GATE_DIR . '/.htaccess',
                 $snippetPath => 'htaccess.snippet',
-            ], [$gateDir . '/vendor' => HostDir::GATE_DIR . '/vendor']);
+            ], $directories);
         }
 
         if ($zip && !$keepLocal) {
@@ -192,13 +207,14 @@ HTACCESS;
             return;
         }
 
+        $files = [];
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($source, \FilesystemIterator::SKIP_DOTS),
             \RecursiveIteratorIterator::SELF_FIRST,
         );
 
         foreach ($iterator as $item) {
-            $relative = $iterator->getSubPathname();
+            $relative = str_replace('\\', '/', $iterator->getSubPathname());
             $dest = $target . '/' . $relative;
             if ($item->isDir()) {
                 if (!is_dir($dest)) {
@@ -212,7 +228,16 @@ HTACCESS;
                 mkdir($parent, 0755, true);
             }
 
-            copy($item->getPathname(), $dest);
+            $files[] = [$item->getPathname(), $dest];
+        }
+
+        $total = count($files);
+        PushProgress::arrow('Copying ' . number_format($total) . ' vendor files…');
+        $current = 0;
+        foreach ($files as [$from, $to]) {
+            $current++;
+            copy($from, $to);
+            PushProgress::progress($current, $total, 'vendor');
         }
     }
 

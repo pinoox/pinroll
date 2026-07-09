@@ -3,7 +3,8 @@
 namespace Pinoox\Pinroll\Support;
 
 /**
- * Live progress sink for pinroll:push (CLI).
+ * Live progress sink for pinroll CLI.
+ * Falls back to STDERR when no handler is bound (so long steps are never silent).
  */
 final class PushProgress
 {
@@ -80,7 +81,7 @@ final class PushProgress
     public static function progress(int $current, int $total, string $label = ''): void
     {
         if (self::$progressHandler !== null) {
-            self::$progressHandler($current, $total, $label);
+            (self::$progressHandler)($current, $total, $label);
 
             return;
         }
@@ -97,7 +98,27 @@ final class PushProgress
 
     private static function emit(string $message, string $style): void
     {
-        self::$handler?->__invoke($message, $style);
+        if (self::$handler !== null) {
+            (self::$handler)($message, $style);
+            return;
+        }
+
+        // Fallback so connect/gate never look hung with zero output
+        $prefix = match ($style) {
+            PushConsole::STYLE_ARROW => '→ ',
+            PushConsole::STYLE_SUCCESS => '✓ ',
+            PushConsole::STYLE_WARN => '! ',
+            PushConsole::STYLE_MUTED => '  ',
+            PushConsole::STYLE_BLANK => '',
+            default => '',
+        };
+
+        if ($style === PushConsole::STYLE_BLANK) {
+            fwrite(STDERR, "\n");
+        } else {
+            fwrite(STDERR, $prefix . $message . "\n");
+        }
+        fflush(STDERR);
     }
 
     private static function shouldSkipStreamLine(string $line): bool

@@ -5,14 +5,28 @@ namespace Pinoox\Pinroll\Console;
 final class EnvFileWriter
 {
     /**
+     * Merge keys into .env.
+     * Existing keys are updated in place.
+     * New keys are appended once as a single block under one comment.
+     *
      * @param array<string, string> $values
      */
-    public static function merge(string $path, array $values, string $newKeyComment = '# Pinroll'): void
-    {
+    public static function merge(
+        string $path,
+        array $values,
+        string $blockComment = '# Pinroll — target credentials (FTP / SSH / PinGate)',
+    ): void {
+        if ($values === []) {
+            return;
+        }
+
         $lines = is_file($path) ? file($path, FILE_IGNORE_NEW_LINES) : [];
         if ($lines === false) {
             $lines = [];
         }
+
+        $updates = [];
+        $appends = [];
 
         foreach ($values as $key => $value) {
             $pattern = '/^' . preg_quote($key, '/') . '\s*=/';
@@ -23,29 +37,35 @@ final class EnvFileWriter
                 if (preg_match($pattern, (string) $existing)) {
                     $lines[$index] = $line;
                     $found = true;
+                    $updates[$key] = $value;
 
                     break;
                 }
             }
 
-            if ($found) {
-                putenv($key . '=' . $value);
-                $_ENV[$key] = $value;
-                $_SERVER[$key] = $value;
-
-                continue;
+            if (!$found) {
+                $appends[$key] = $value;
             }
 
             putenv($key . '=' . $value);
             $_ENV[$key] = $value;
             $_SERVER[$key] = $value;
+        }
 
-            if ($lines !== [] && trim((string) end($lines)) !== '') {
+        if ($appends !== []) {
+            // Drop trailing blank lines before appending the block
+            while ($lines !== [] && trim((string) end($lines)) === '') {
+                array_pop($lines);
+            }
+
+            if ($lines !== []) {
                 $lines[] = '';
             }
 
-            $lines[] = $newKeyComment;
-            $lines[] = $line;
+            $lines[] = $blockComment;
+            foreach ($appends as $key => $value) {
+                $lines[] = $key . '=' . self::escapeValue($value);
+            }
         }
 
         if (file_put_contents($path, implode("\n", $lines) . "\n") === false) {

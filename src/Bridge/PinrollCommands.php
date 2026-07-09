@@ -13,8 +13,10 @@ final class PinrollCommands
     {
         return [
             \Pinoox\Terminal\Pinroll\PinrollInitCommand::class,
+            \Pinoox\Terminal\Pinroll\PinrollConnectCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollCheckCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollPushCommand::class,
+            \Pinoox\Terminal\Pinroll\PinrollDeployCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollGateInitCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollGateTokenCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollVendorPackCommand::class,

@@ -4,29 +4,38 @@ namespace Pinoox\Pinroll\Transport;
 
 use Pinoox\Pinroll\Exception\PinrollException;
 use Pinoox\Pinroll\Support\HostDir;
+use Pinoox\Pinroll\Support\PushProgress;
 
 final class FtpUploader
 {
     /**
      * @param resource $connection
      */
-    public function connect(string $host, string $user, string $password)
+    public function connect(string $host, string $user, string $password, int $timeout = 20)
     {
         if (!function_exists('ftp_connect')) {
             throw new PinrollException('FTP extension is not available.');
         }
 
-        $connection = @ftp_connect($host);
+        PushProgress::arrow('FTP connecting to ' . $host . '…');
+        $connection = @ftp_connect($host, 21, $timeout);
         if ($connection === false) {
-            throw new PinrollException('FTP connection failed.');
+            throw new PinrollException(
+                'FTP connection failed (timeout ' . $timeout . 's). Check PINROLL_*_HOST and network.',
+            );
+        }
+
+        if (function_exists('ftp_set_option')) {
+            @ftp_set_option($connection, FTP_TIMEOUT_SEC, $timeout);
         }
 
         if (!@ftp_login($connection, $user, $password)) {
             ftp_close($connection);
-            throw new PinrollException('FTP login failed.');
+            throw new PinrollException('FTP login failed. Check PINROLL_*_USER / PASSWORD.');
         }
 
         ftp_pasv($connection, true);
+        PushProgress::arrow('FTP connected');
 
         return $connection;
     }
@@ -94,7 +103,7 @@ final class FtpUploader
             $local = $localDir . '/' . $relative;
             $remote = $remoteDir . '/' . $relative;
             $this->uploadFile($connection, $local, $remote);
-            \Pinoox\Pinroll\Support\PushProgress::progress($current, $total, $label ?? $relative);
+            \Pinoox\Pinroll\Support\PushProgress::progress($current, $total, $label ?? 'gate');
         }
 
         return $total;

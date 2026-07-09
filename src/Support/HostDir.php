@@ -256,7 +256,7 @@ final class HostDir
             'pinion' => self::deployGuide($hostDir),
             'ssh', 'ftp' => [
                 'Upload via ' . $transport . ' to: ' . $incoming . '/',
-                'For push -a: add top-level gate { url, token } (run pinroll:gate).',
+                'For pinroll:deploy / pinroll:apply: add top-level gate { url, token } (run pinroll:gate).',
                 'Deploy root: ' . $guideDeploy,
             ],
             default => [],

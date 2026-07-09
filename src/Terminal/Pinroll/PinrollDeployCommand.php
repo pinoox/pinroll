@@ -21,11 +21,10 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
-    name: 'pinroll:push',
-    description: 'Build and upload a release (no apply). Use pinroll:deploy to go live.',
-    aliases: ['pinroll:prod'],
+    name: 'pinroll:deploy',
+    description: 'Push release to a target and apply via PinGate (go live)',
 )]
-class PinrollPushCommand extends Terminal
+class PinrollDeployCommand extends Terminal
 {
     protected function configure(): void
     {
@@ -36,9 +35,8 @@ class PinrollPushCommand extends Terminal
             ->addOption('app', null, InputOption::VALUE_NONE, 'Push app package(s)')
             ->addOption('vendor', null, InputOption::VALUE_NONE, 'Sync vendor/')
             ->addOption('theme', null, InputOption::VALUE_NONE, 'Sync theme dist/')
-            ->addOption('apply', 'a', InputOption::VALUE_NONE, 'Also apply after push (prefer: pinroll:deploy)')
             ->addOption('package', null, InputOption::VALUE_REQUIRED, 'Single app package override')
-            ->addOption('check', 'c', InputOption::VALUE_NONE, 'Run pinroll:check before pushing');
+            ->addOption('check', 'c', InputOption::VALUE_NONE, 'Run pinroll:check before deploying');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -100,16 +98,12 @@ class PinrollPushCommand extends Terminal
                 'vendor' => $input->getOption('vendor') ? true : null,
                 'theme' => $input->getOption('theme') ? true : null,
                 'package' => $input->getOption('package'),
+                'apply' => true,
             ], static fn (mixed $value): bool => $value !== null && $value !== false && $value !== '');
-
-            $shouldApply = (bool) $input->getOption('apply');
-            if ($shouldApply) {
-                $options['apply'] = true;
-            }
 
             $plan = PushRuleResolver::resolve($resolved, $options);
 
-            $this->printHeader($io, $targetName, $resolved['transport'], $available, $plan, $shouldApply);
+            $this->printHeader($io, $targetName, $resolved['transport'], $available, $plan);
 
             if ($input->getOption('check')) {
                 $check = (new TargetChecker())->check($targetName, $via !== '' ? $via : null);
@@ -120,9 +114,7 @@ class PinrollPushCommand extends Terminal
                 }
             }
 
-            $runner = new DeployRunner();
-            $result = $runner->deploy($targetName, $options);
-
+            $result = (new DeployRunner())->deploy($targetName, $options);
             PinrollCli::printPushResult($io, $result);
 
             return Command::SUCCESS;
@@ -145,11 +137,10 @@ class PinrollPushCommand extends Terminal
         string $transport,
         array $available,
         array $plan,
-        bool $apply = false,
     ): void {
         $io->writeln('');
         $io->block(
-            'pinroll:push  →  ' . $targetName,
+            'pinroll:deploy  →  ' . $targetName,
             'INFO',
             'fg=black;bg=cyan',
             ' ',
@@ -161,9 +152,7 @@ class PinrollPushCommand extends Terminal
             ['Transport' => '<comment>' . $transport . '</comment> <fg=gray>(' . implode(' · ', $available) . ')</>'],
             ['Parts' => '<info>' . implode(', ', $plan['parts']) . '</info>'],
             ['Apps' => $plan['apps'] !== [] ? '<info>' . implode(', ', $plan['apps']) . '</info>' : '<fg=gray>all in apps/</>'],
-            ['Apply' => $apply
-                ? '<fg=green>yes</> <fg=gray>(-a · prefer pinroll:deploy)</>'
-                : '<fg=gray>no</> <fg=gray>(use pinroll:deploy to go live)</>'],
+            ['Apply' => '<fg=green>yes</> <fg=gray>(push + apply)</>'],
         );
         $io->newLine();
     }

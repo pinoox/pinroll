@@ -19,7 +19,10 @@ composer require pinoox/pinion pinoox/pinroll
 
 ```bash
 php pinoox pinroll:init
-php pinoox pinroll:push
+php pinoox pinroll:connect
+php pinoox pinroll:push production
+php pinoox pinroll:deploy production
+php pinoox pinroll:apply production
 php pinoox pinroll:push staging-app --package=com_pinoox_developer
 php pinoox pinroll:build --bundle=single-app --package=com_pinoox_developer
 php pinoox pinroll:status production
@@ -30,11 +33,14 @@ php pinoox pinroll:vendor
 php pinoox pinroll:pull --server=https://releases.example.com
 ```
 
-- `pinroll:init` — sample config; `-w` interactive wizard
+- `pinroll:init` — scaffold `pinroll/` + `.env` key stubs (no prompts)
+- `pinroll:connect` — ask deploy path + site URL, upload PinGate via FTP
 - `pinroll:vendor` — export platform `vendor/` for host install or core update (`pinroll/vendor.zip`)
-- `pinroll:gate` — build + FTP-upload PinGate (`-z` optional zip; `--no-upload` keep local files)
+- `pinroll:gate` — rebuild/upload PinGate (`-z` optional zip; `--no-upload` keep local files)
 - `pinroll:check` — verify target connectivity before push
-- `pinroll:push` — build and push release to a target (alias: `pinroll:deploy`)
+- `pinroll:push` — build and upload only (no apply)
+- `pinroll:deploy` — push + apply via PinGate (go live)
+- `pinroll:apply` — apply a staged release on the target
 - `pinroll:pull` — pull newer manifest from release server (alias: `pinroll:poll`)
 
 Non-interactive wizard: `php pinoox pinroll:init -w`

@@ -43,9 +43,9 @@ final class GateSetupWizard
             }
         }
 
-        $io->section('PinGate — remote apply (push -a)');
+        $io->section('PinGate — remote apply (deploy)');
         $io->text([
-            'PinGate applies staged releases on the host over HTTP (pinroll:apply / push -a).',
+            'PinGate applies staged releases on the host over HTTP (pinroll:deploy / pinroll:apply).',
             'With FTP configured, files upload automatically (no zip). Token + URL go to .env.',
             'Host needs platform vendor with pinoox/pinroll — export with: php pinoox pinroll:vendor',
         ]);
@@ -227,13 +227,13 @@ final class GateSetupWizard
         $ready = $gateConfigured && ($check['ok'] ?? false);
 
         if ($ready) {
-            $io->success('Setup complete — ready for push + apply');
-            $io->writeln('  <comment>php pinoox pinroll:push ' . $targetName . ' -a</comment>');
+            $io->success('Setup complete — ready to go live');
+            $io->writeln('  <comment>php pinoox pinroll:deploy ' . $targetName . '</comment>');
         } elseif ($gateConfigured) {
             $io->note([
                 'Config and .env are set. Finish host upload if needed, then:',
                 'php pinoox pinroll:check ' . $targetName,
-                'php pinoox pinroll:push ' . $targetName . ' -a',
+                'php pinoox pinroll:deploy ' . $targetName,
             ]);
         }
 

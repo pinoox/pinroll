@@ -3,27 +3,24 @@
 namespace Pinoox\Terminal\Pinroll;
 
 use Pinoox\Component\Terminal;
-use Pinoox\Pinroll\Console\InitService;
+use Pinoox\Pinroll\Console\ConnectService;
 use Pinoox\Pinroll\Console\PinrollCli;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
-    name: 'pinroll:init',
-    description: 'Scaffold pinroll/ config, bundles, and .env key stubs',
+    name: 'pinroll:connect',
+    description: 'Connect host: set deploy path + site URL, upload PinGate via FTP',
 )]
-class PinrollInitCommand extends Terminal
+class PinrollConnectCommand extends Terminal
 {
     protected function configure(): void
     {
-        $this
-            ->addArgument('target', InputArgument::OPTIONAL, 'Target name', 'production')
-            ->addOption('force', 'f', InputOption::VALUE_NONE, 'Rewrite config and bundle stubs');
+        $this->addArgument('target', InputArgument::OPTIONAL, 'Target name', 'production');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -34,14 +31,8 @@ class PinrollInitCommand extends Terminal
         $target = (string) ($input->getArgument('target') ?: 'production');
 
         try {
-            $result = (new InitService((string) $root))->run(
-                $target,
-                false,
-                (bool) $input->getOption('force'),
-                $io,
-            );
-
-            PinrollCli::printInitSummary($io, $result);
+            $result = (new ConnectService((string) $root))->run($io, $target);
+            PinrollCli::printConnectResult($io, $result);
 
             return Command::SUCCESS;
         } catch (\Throwable $e) {

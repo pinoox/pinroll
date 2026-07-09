@@ -8,10 +8,18 @@ use Pinoox\Pinroll\Support\PushProgress;
 use Pinoox\Pinroll\Transport\FtpUploader;
 
 /**
- * Upload PinGate files (pingate.php + gate/) over FTP — no zip.
+ * Upload PinGate files (pingate.php + gate PHP stubs) over FTP — no zip, no vendor tree.
  */
 final class GateFtpDeployer
 {
+    /** @var list<string> */
+    private const GATE_FILES = [
+        'bootstrap.php',
+        'index.php',
+        'pingate.php',
+        '.htaccess',
+    ];
+
     /**
      * @param array<string, mixed> $resolvedTarget
      * @return array{remote_root: string, files: int}
@@ -46,8 +54,23 @@ final class GateFtpDeployer
             $uploader->uploadFile($connection, $localEntry, $remoteEntry);
 
             $remoteGate = $prefix . HostDir::GATE_DIR;
-            PushProgress::arrow('FTP ' . $remoteGate . '/');
-            $count = $uploader->uploadDirectory($connection, $localGateDir, $remoteGate, 'gate');
+            PushProgress::arrow('FTP ' . $remoteGate . '/ (PinGate stubs only)');
+            $count = 0;
+            foreach (self::GATE_FILES as $name) {
+                $local = rtrim($localGateDir, '/') . '/' . $name;
+                if (!is_file($local)) {
+                    continue;
+                }
+                $uploader->uploadFile($connection, $local, $remoteGate . '/' . $name);
+                $count++;
+            }
+
+            // Optional fallback vendor (only when built with --with-vendor)
+            $localVendor = rtrim($localGateDir, '/') . '/vendor';
+            if (is_dir($localVendor) && is_file($localVendor . '/autoload.php')) {
+                PushProgress::arrow('FTP ' . $remoteGate . '/vendor/ (optional fallback)');
+                $count += $uploader->uploadDirectory($connection, $localVendor, $remoteGate . '/vendor', 'vendor');
+            }
 
             return [
                 'remote_root' => $deployRoot === '.' ? HostDir::GATE_ENTRY : $deployRoot,

@@ -314,6 +314,7 @@ final class DeployRunner
         ?string $gateUrl = null,
         bool $rotateToken = false,
         bool $upload = true,
+        bool $withVendor = false,
     ): array {
         $target = Pinroll::targets()->resolve($targetName);
         $raw = Pinroll::targets()->raw($targetName);
@@ -337,7 +338,7 @@ final class DeployRunner
             'created_at' => date('c'),
             'dir' => $dir,
             'platform_root' => '..',
-        ], $zip, $dir, keepLocal: true);
+        ], $zip, $dir, keepLocal: true, withVendor: $withVendor);
 
         $resolvedUrl = $gateUrl !== null ? rtrim($gateUrl, '/') : '';
         $gateUrlFromUser = $resolvedUrl !== '';

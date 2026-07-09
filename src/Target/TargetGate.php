@@ -92,10 +92,10 @@ final class TargetGate
             '4. Add top-level gate in pinroll.config.php:',
             self::configSnippet($targetName),
             '',
-            '5. Push, then apply on the target (not local):',
+            '5. Push, then apply — or go live in one step:',
             '   php pinoox pinroll:push ' . $targetName,
             '   php pinoox pinroll:apply ' . $targetName,
-            '   Or in one step: php pinoox pinroll:push ' . $targetName . ' -a',
+            '   Or: php pinoox pinroll:deploy ' . $targetName,
         ];
     }
 

@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 /**
- * PinGate HTTP bootstrap — resolve platform root first, then load platform vendor.
- * Bundled gate/vendor is never treated as the Pinoox platform root.
+ * PinGate HTTP bootstrap — resolve platform root, then load platform vendor/autoload.php.
+ * Optional gate/vendor is only a fallback (--with-vendor); never treated as platform root.
  */
 return static function (string $configDir): void {
     $configDir = rtrim(str_replace('\\', '/', $configDir), '/');
