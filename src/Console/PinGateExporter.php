@@ -87,8 +87,8 @@ final class PinGateExporter
 
     public static function htaccessSnippetContent(?string $hostDir = null): string
     {
-        $hostDir = HostDir::normalize($hostDir);
-        $prefix = $hostDir === '' ? '' : $hostDir . '/';
+        $web = HostDir::webPath($hostDir);
+        $prefix = $web === '' ? '' : $web . '/';
 
         return <<<HTACCESS
 # Pinroll — paste into host .htaccess before front-controller (only if check returns HTML)

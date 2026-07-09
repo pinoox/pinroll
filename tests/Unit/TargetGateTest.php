@@ -79,13 +79,14 @@ test('target gate setup guide mentions top-level gate', function () {
 
 test('target gate example url never uses ftp host', function () {
     $target = [
-        'dir' => 'pinoox3',
+        'dir' => 'public_html/pinoox3',
         'ftp' => ['host' => 'ftp.example-host.test'],
     ];
 
     expect(TargetGate::suggestedUrl($target))
         ->toBe('https://pinoox.com/pinoox3/pingate.php?route=')
-        ->not->toContain('example-host');
+        ->not->toContain('example-host')
+        ->not->toContain('public_html');
 });
 
 test('target gate example url uses pinoox defaults', function () {

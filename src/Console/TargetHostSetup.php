@@ -42,7 +42,7 @@ final class TargetHostSetup
             $io->writeln('<comment>Host settings for PinGate (' . $targetName . ')</comment>');
 
             $dir = HostDir::normalize((string) $io->ask(
-                'Site subdirectory (empty = domain root; e.g. shop)',
+                'FTP deploy path (empty = login root; e.g. public_html or public_html/pinoox3)',
                 $dir,
             ));
 
@@ -81,17 +81,18 @@ final class TargetHostSetup
         Pinroll::configure([], $paths);
         $raw = Pinroll::targets()->raw($targetName);
         $dir = HostDir::fromTarget($raw);
-        $exampleUrl = TargetGate::exampleUrl($dir !== '' ? $dir : null);
 
         if ($input->isInteractive() && !(bool) $input->getOption('no-interaction')) {
             $io->writeln('<comment>PinGate setup (' . $targetName . ')</comment>');
 
             $dir = HostDir::normalize((string) $io->ask(
-                'Site subdirectory (empty = domain root; e.g. shop)',
+                'FTP deploy path (empty = login root; e.g. public_html or public_html/pinoox3)',
                 $dir,
             ));
 
-            $defaultUrl = TargetGate::exampleUrl($dir !== '' ? $dir : null);
+            $web = HostDir::webPath($dir);
+            $defaultUrl = TargetGate::exampleUrl($web !== '' ? $web : null);
+            $io->writeln('  <fg=gray>Public URL path:</> <comment>/' . ($web !== '' ? $web . '/' : '') . 'pingate.php</comment>');
             $gateUrl = self::askPinGateUrl($io, $dir, $defaultUrl);
 
             if ($dir !== HostDir::fromTarget($raw)) {

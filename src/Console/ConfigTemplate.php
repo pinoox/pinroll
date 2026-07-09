@@ -10,9 +10,8 @@ final class ConfigTemplate
 /**
  * Pinroll targets
  *
- * dir  — deploy path relative to FTP/SSH login ('' = login root; often public_html).
- *        Public URL: https://pinoox.com/pingate.php when the site is at domain root.
- *        Subfolder example: 'shop' → https://pinoox.com/shop/pingate.php
+ * dir  — FTP/SSH path relative to login (e.g. public_html or public_html/pinoox3).
+ *        Public URL strips docroot prefixes: public_html/pinoox3 → https://pinoox.com/pinoox3/pingate.php
  * via  — default transport: ftp | ssh | pinion
  * gate — PinGate for this target (url + token). Shared by all transports for apply / pinion.
  * ftp / ssh / pinion — connection credentials only (no nested gate).

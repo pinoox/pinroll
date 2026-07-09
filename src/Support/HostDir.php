@@ -7,6 +7,15 @@ final class HostDir
     public const GATE_ENTRY = 'pingate.php';
     public const GATE_DIR = 'gate';
 
+    /** Leading FTP/docroot segments that must not appear in public URLs. */
+    private const DOCROOT_SEGMENTS = [
+        'public_html',
+        'www',
+        'httpdocs',
+        'htdocs',
+        'wwwroot',
+    ];
+
     public static function normalize(?string $hostDir): string
     {
         $hostDir = trim(str_replace('\\', '/', (string) $hostDir), '/');
@@ -20,6 +29,25 @@ final class HostDir
         }
 
         return $hostDir;
+    }
+
+    /**
+     * Public URL path under the domain (strips FTP docroot prefixes like public_html/).
+     * FTP dir `public_html/pinoox3` → web `pinoox3`; `public_html` → `` (domain root).
+     */
+    public static function webPath(?string $hostDir = null): string
+    {
+        $hostDir = self::normalize($hostDir);
+        if ($hostDir === '') {
+            return '';
+        }
+
+        $parts = explode('/', $hostDir);
+        while ($parts !== [] && in_array(strtolower($parts[0]), self::DOCROOT_SEGMENTS, true)) {
+            array_shift($parts);
+        }
+
+        return implode('/', $parts);
     }
 
     public static function suggestFromDomain(string $domain): string
@@ -57,21 +85,30 @@ final class HostDir
     {
         $hostDir = self::normalize($hostDir);
 
-        return $hostDir === '' ? 'public_html' : 'public_html/' . $hostDir;
+        if ($hostDir === '') {
+            return 'public_html';
+        }
+
+        $lower = strtolower($hostDir);
+        if ($lower === 'public_html' || str_starts_with($lower, 'public_html/')) {
+            return $hostDir;
+        }
+
+        return 'public_html/' . $hostDir;
     }
 
     /**
-     * Web path to pingate.php on the host (depends on target dir).
+     * Public web path to pingate.php (never includes public_html/).
      */
     public static function gateEntryWebPath(?string $hostDir = null): string
     {
-        $hostDir = self::normalize($hostDir);
+        $web = self::webPath($hostDir);
 
-        return $hostDir === '' ? self::GATE_ENTRY : $hostDir . '/' . self::GATE_ENTRY;
+        return $web === '' ? self::GATE_ENTRY : $web . '/' . self::GATE_ENTRY;
     }
 
     /**
-     * Example host path for guides, e.g. public_html/pinoox3/pingate.php
+     * Example host filesystem path for guides, e.g. public_html/pinoox3/pingate.php
      */
     public static function gateEntryPath(?string $hostDir = null): string
     {
@@ -177,6 +214,11 @@ final class HostDir
 
         if ($deploy === '.') {
             return 'FTP/SSH login root (usually public_html/)';
+        }
+
+        $lower = strtolower($deploy);
+        if ($lower === 'public_html' || str_starts_with($lower, 'public_html/')) {
+            return $deploy . '/';
         }
 
         return $deploy . '/ (usually public_html/' . $deploy . '/)';

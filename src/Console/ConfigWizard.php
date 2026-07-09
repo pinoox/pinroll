@@ -326,9 +326,9 @@ final class ConfigWizard
     private function askDir(?string $domain = null): string
     {
         $suggested = $domain !== null && $domain !== '' ? HostDir::suggestFromDomain($domain) : '';
-        $label = 'Host folder under public_html (empty = site root)';
+        $label = 'FTP deploy path (empty = login root; e.g. public_html or public_html/shop)';
         if ($suggested !== '') {
-            $label .= ' — suggestion: ' . $suggested;
+            $label .= ' — suggestion: public_html/' . $suggested;
         }
 
         return HostDir::normalize((string) $this->io->ask($label, ''));

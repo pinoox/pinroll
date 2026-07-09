@@ -346,8 +346,7 @@ final class DeployRunner
                 $resolvedUrl = rtrim($existingUrl, '/');
                 $gateUrlFromUser = true;
             } else {
-                $dirForExample = $dir !== '' ? $dir : HostDir::fromTarget($raw);
-                $resolvedUrl = rtrim(TargetGate::exampleUrl($dirForExample), '/');
+                $resolvedUrl = rtrim(TargetGate::exampleUrl($dir), '/');
             }
         }
 

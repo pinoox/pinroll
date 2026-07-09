@@ -61,10 +61,11 @@ final class GateSetupWizard
         $targets = is_array($loaded['targets'] ?? null) ? $loaded['targets'] : [];
         $target = $targets[$targetName] ?? $raw;
         $dir = HostDir::fromTarget($target);
+        $web = HostDir::webPath($dir);
 
         $siteUrl = trim((string) $io->ask(
             'Public site URL (e.g. https://pinoox.com)',
-            'https://' . TargetGate::EXAMPLE_DOMAIN . ($dir !== '' ? '/' . $dir : ''),
+            'https://' . TargetGate::EXAMPLE_DOMAIN . ($web !== '' ? '/' . $web : ''),
         ));
 
         [$parsedDir, $gateUrlDefault] = self::parseSiteUrl($siteUrl, $dir);

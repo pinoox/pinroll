@@ -132,8 +132,9 @@ final class TargetGate
         }
 
         $dir = HostDir::fromTarget($target);
+        $web = HostDir::webPath($dir);
 
-        return self::exampleUrl($dir !== '' ? $dir : null);
+        return self::exampleUrl($web !== '' ? $web : null);
     }
 
     /**

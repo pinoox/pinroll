@@ -97,17 +97,18 @@ final class TargetChecker
         );
 
         $checks[] = $this->checkField('gate_url', $gateUrl !== '', $gateUrl !== '' ? $gateUrl : 'Missing gate_url (set in .env)');
+        $webDir = HostDir::webPath($hostDir);
         if ($gateUrl !== '' && !str_contains($gateUrl, HostDir::GATE_ENTRY)) {
             $checks[] = $this->checkField(
                 'gate_url_path',
                 false,
                 'gate_url should end with /' . HostDir::gateEntryWebPath($hostDir) . '?route=',
             );
-        } elseif ($gateUrl !== '' && $hostDir !== '' && !str_contains($gateUrl, '/' . $hostDir . '/')) {
+        } elseif ($gateUrl !== '' && $webDir !== '' && !str_contains($gateUrl, '/' . $webDir . '/')) {
             $checks[] = $this->checkField(
                 'gate_url_dir',
                 false,
-                'gate_url should include /' . $hostDir . '/ when dir is set (e.g. https://domain.com/' . $hostDir . '/pingate.php?route=)',
+                'gate_url should include /' . $webDir . '/ when site is in a subfolder (e.g. https://domain.com/' . $webDir . '/pingate.php?route=)',
             );
         }
 

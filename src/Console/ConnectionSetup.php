@@ -15,7 +15,7 @@ final class ConnectionSetup
         $io->section('Pinroll setup');
 
         $dir = HostDir::normalize((string) $io->ask(
-            'Site subdirectory (empty = domain root; e.g. shop)',
+            'FTP deploy path (empty = login root; e.g. public_html or public_html/shop)',
             '',
         ));
         $via = (string) $io->choice('Default transport', [

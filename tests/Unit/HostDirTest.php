@@ -16,6 +16,31 @@ test('gate url follows target dir on host', function () {
         ->toBe('https://pinoox.com/pingate.php?route=');
 });
 
+test('web path strips FTP docroot prefixes from public URLs', function () {
+    expect(HostDir::webPath('public_html'))->toBe('');
+    expect(HostDir::webPath('public_html/pinoox3'))->toBe('pinoox3');
+    expect(HostDir::webPath('public_html/shop/app'))->toBe('shop/app');
+    expect(HostDir::webPath('pinoox3'))->toBe('pinoox3');
+    expect(HostDir::webPath('www/pinoox3'))->toBe('pinoox3');
+
+    expect(HostDir::gateEntryWebPath('public_html/pinoox3'))
+        ->toBe('pinoox3/pingate.php');
+    expect(HostDir::gateEntryWebPath('public_html'))
+        ->toBe('pingate.php');
+
+    expect(GateUrl::fromDomain('pinoox.com', 'public_html/pinoox3'))
+        ->toBe('https://pinoox.com/pinoox3/pingate.php?route=');
+    expect(GateUrl::fromDomain('pinoox.com', 'public_html'))
+        ->toBe('https://pinoox.com/pingate.php?route=');
+});
+
+test('publicHtmlPath does not double-prefix public_html', function () {
+    expect(HostDir::publicHtmlPath(''))->toBe('public_html');
+    expect(HostDir::publicHtmlPath('pinoox3'))->toBe('public_html/pinoox3');
+    expect(HostDir::publicHtmlPath('public_html'))->toBe('public_html');
+    expect(HostDir::publicHtmlPath('public_html/pinoox3'))->toBe('public_html/pinoox3');
+});
+
 test('local build stays under pinroll folder', function () {
     expect(HostDir::localEntryPath())->toBe('pinroll/pingate.php');
     expect(HostDir::localGateDir())->toBe('pinroll/gate');
@@ -72,4 +97,7 @@ test('deploy root is relative to login root without public_html', function () {
 
 test('htaccess snippet includes dir prefix', function () {
     expect(PinGateExporter::htaccessSnippetContent('pinoox3'))->toContain('pinoox3/pingate');
+    expect(PinGateExporter::htaccessSnippetContent('public_html/pinoox3'))->toContain('pinoox3/pingate');
+    expect(PinGateExporter::htaccessSnippetContent('public_html/pinoox3'))->not->toContain('public_html');
+    expect(PinGateExporter::htaccessSnippetContent('public_html'))->toContain('^pingate');
 });
