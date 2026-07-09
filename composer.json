@@ -1,0 +1,57 @@
+{
+  "name": "pinoox/pinroll",
+  "version": "1.0.0",
+  "description": "Pinroll — atomic release rollout, rollback, and PinGate delivery for Pinoox",
+  "type": "library",
+  "license": "MIT",
+  "keywords": ["pinoox", "pinroll", "deploy", "rollback", "release", "pingate", "devops", "ci/cd", "php" ],
+  "authors": [
+    {
+      "name": "Pinoox",
+      "email": "dev@pinoox.com"
+    }
+  ],
+  "require": {
+    "php": "^8.2",
+    "pinoox/pinion": "^1.1",
+    "symfony/console": "^6.4|^7.0",
+    "symfony/http-foundation": "^6.4|^7.0"
+  },
+  "require-dev": {
+    "pestphp/pest": "^2.36",
+    "nunomaduro/collision": "^8.5"
+  },
+  "suggest": {
+    "pinoox/pincore": "HMVC integration, Pinx pipeline, and php pinoox CLI",
+    "phpseclib/phpseclib": "SSH/SFTP transport"
+  },
+  "autoload": {
+    "psr-4": {
+      "Pinoox\\Pinroll\\": "src/"
+    },
+    "classmap": [
+      "src/Terminal"
+    ]
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Pinoox\\Pinroll\\Tests\\": "tests/"
+    }
+  },
+  "scripts": {
+    "test": "pest",
+    "test:platform": "PINROLL_PLATFORM_TEST=1 pest --group=platform"
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "extra": {
+    "branch-alias": {
+      "dev-master": "1.x-dev"
+    }
+  },
+  "config": {
+    "allow-plugins": {
+      "pestphp/pest-plugin": true
+    }
+  }
+}

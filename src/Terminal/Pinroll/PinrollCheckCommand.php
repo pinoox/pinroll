@@ -1,0 +1,79 @@
+<?php
+
+namespace Pinoox\Terminal\Pinroll;
+
+use Pinoox\Component\Terminal;
+use Pinoox\Pinroll\Console\PinrollCli;
+use Pinoox\Pinroll\Pinroll;
+use Pinoox\Pinroll\Target\TargetChecker;
+use Symfony\Component\Console\Attribute\AsCommand;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputArgument;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Style\SymfonyStyle;
+
+#[AsCommand(
+    name: 'pinroll:check',
+    description: 'Check configured targets',
+)]
+class PinrollCheckCommand extends Terminal
+{
+    protected function configure(): void
+    {
+        $this
+            ->addArgument('target', InputArgument::OPTIONAL, 'Target name (omit for all)')
+            ->addOption('via', null, InputOption::VALUE_REQUIRED, 'Check a specific transport: ftp, ssh, pinion')
+            ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON');
+    }
+
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        parent::execute($input, $output);
+        $io = new SymfonyStyle($input, $output);
+
+        try {
+            $checker = new TargetChecker();
+            $target = $input->getArgument('target');
+            $via = (string) ($input->getOption('via') ?: '');
+
+            $results = $target !== null && $target !== ''
+                ? [$checker->check((string) $target, $via !== '' ? $via : null)]
+                : $checker->checkAll();
+
+            if ($input->getOption('json')) {
+                $io->writeln(json_encode($results, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+                return $this->exitCode($results);
+            }
+
+            $io->writeln('<info>pinroll:check</info>');
+            $io->newLine();
+
+            foreach ($results as $result) {
+                PinrollCli::printCheckResult($io, $result);
+            }
+
+            return $this->exitCode($results);
+        } catch (\Throwable $e) {
+            $io->error($e->getMessage());
+
+            return Command::FAILURE;
+        }
+    }
+
+    /**
+     * @param list<array<string, mixed>> $results
+     */
+    private function exitCode(array $results): int
+    {
+        foreach ($results as $result) {
+            if (!($result['ok'] ?? false)) {
+                return Command::FAILURE;
+            }
+        }
+
+        return Command::SUCCESS;
+    }
+}

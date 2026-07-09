@@ -1,0 +1,11 @@
+<?php
+
+return [
+    'name' => 'platform-core',
+    'scope' => 'platform',
+    'build' => [
+        ['type' => 'platform', 'command' => 'pinx:build platform'],
+    ],
+    'order' => ['platform'],
+    'exclude' => ['storage/', '.env', 'node_modules/', 'theme/*/src'],
+];

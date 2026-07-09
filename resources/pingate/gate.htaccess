@@ -1,0 +1,4 @@
+# Pinroll PinGate — allow direct PHP access (parent .htaccess may rewrite subfolders)
+<IfModule mod_rewrite.c>
+RewriteEngine Off
+</IfModule>

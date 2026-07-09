@@ -1,0 +1,8 @@
+<?php
+
+return [
+    'name' => 'test-empty',
+    'scope' => 'app',
+    'build' => [],
+    'depends_check' => false,
+];

@@ -1,0 +1,14 @@
+<?php
+
+return [
+    'name' => 'platform-full',
+    'scope' => 'multi',
+    'build' => [
+        ['type' => 'platform', 'command' => 'pinx:build platform'],
+        ['type' => 'app', 'package' => 'com_pinoox_manager'],
+        ['type' => 'app', 'package' => 'com_pinoox_installer'],
+        ['type' => 'app', 'package' => 'com_pinoox_welcome'],
+    ],
+    'order' => ['platform', 'com_pinoox_manager', 'com_pinoox_installer', 'com_pinoox_welcome'],
+    'exclude' => ['storage/', '.env', 'node_modules/', 'theme/*/src'],
+];

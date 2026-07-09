@@ -1,0 +1,22 @@
+<?php
+
+return [
+    'targets' => [
+        'production' => [
+            'dir' => '',
+            'gate_url' => env('PINROLL_PRODUCTION_URL', ''),
+            'token' => env('PINROLL_PRODUCTION_TOKEN', ''),
+            'public_key' => env('PINROLL_PRODUCTION_PUBKEY', ''),
+            'transport' => 'pinion',
+            'bundle' => 'platform-full',
+        ],
+        'staging' => [
+            'dir' => '',
+            'gate_url' => env('PINROLL_STAGING_URL', ''),
+            'token' => env('PINROLL_STAGING_TOKEN', ''),
+            'transport' => 'pinion',
+            'bundle' => 'single-app',
+            'package' => 'com_pinoox_developer',
+        ],
+    ],
+];

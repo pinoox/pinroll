@@ -1,0 +1,4 @@
+# Pinroll PinGate — add on the HOST only if pinroll:check returns HTML instead of JSON.
+# Copy into public_html/.htaccess (or your deploy-root .htaccess) before the front-controller rule.
+RewriteRule ^pingate\.php$ - [L]
+RewriteRule ^gate/ - [L]

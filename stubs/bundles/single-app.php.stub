@@ -1,0 +1,10 @@
+<?php
+
+return [
+    'name' => 'single-app',
+    'scope' => 'app',
+    'build' => [
+        ['type' => 'app', 'package' => '{{package}}', 'command' => 'pinx:build {{package}} --yes --no-ansi'],
+    ],
+    'depends_check' => true,
+];
