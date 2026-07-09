@@ -6,6 +6,7 @@ use Pinoox\Pinroll\Contract\PathResolverInterface;
 use Pinoox\Pinroll\Exception\PinrollException;
 use Pinoox\Pinroll\Support\HostDir;
 use Pinoox\Pinroll\Support\ProjectPaths;
+use Pinoox\Pinroll\Support\PushProgress;
 use ZipArchive;
 
 final class PinGateExporter
@@ -157,11 +158,13 @@ HTACCESS;
     {
         $sourceVendor = $this->resolveVendorSource();
         $target = $gateDir . '/vendor';
+        PushProgress::arrow('Copying PinGate vendor…');
         if (is_dir($target)) {
             $this->removeDir($target);
         }
 
         $this->copyVendorTree($sourceVendor, $target);
+        PushProgress::arrow('PinGate vendor ready');
     }
 
     private function resolveVendorSource(): string

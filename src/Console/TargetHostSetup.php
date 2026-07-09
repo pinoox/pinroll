@@ -118,8 +118,11 @@ final class TargetHostSetup
         return trim((string) $io->ask(
             'PinGate URL (domain or full URL, e.g. pinoox.com)',
             $default,
-            static function (mixed $value) use ($hostDir): string {
+            static function (mixed $value) use ($hostDir, $default): string {
                 $value = trim((string) $value);
+                if ($value === '') {
+                    $value = trim($default);
+                }
                 if ($value === '') {
                     return '';
                 }

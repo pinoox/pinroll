@@ -329,6 +329,7 @@ final class DeployRunner
         $dir = $hostDir !== null ? HostDir::normalize($hostDir) : HostDir::fromTarget($target);
 
         // Always keep local files until FTP upload finishes (then cleanup). Zip is optional.
+        PushProgress::arrow('Building PinGate files…');
         $exporter = new PinGateExporter(Pinroll::paths());
         $export = $exporter->export($targetName, [
             'target' => $targetName,

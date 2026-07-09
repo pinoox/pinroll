@@ -68,15 +68,11 @@ final class GateSetupWizard
             'https://' . TargetGate::EXAMPLE_DOMAIN . ($web !== '' ? '/' . $web : ''),
         ));
 
-        [$parsedDir, $gateUrlDefault] = self::parseSiteUrl($siteUrl, $dir);
-        if ($parsedDir !== $dir) {
-            $dir = $parsedDir;
-            $targets[$targetName]['dir'] = $dir;
-            ConfigWriter::setTargetDir($configFile, $targetName, $dir);
-        }
+        // Derive PinGate URL from the site URL — do not ask again (that looked like a hang).
+        [, $gateUrl] = self::parseSiteUrl($siteUrl, $dir);
+        $io->writeln('  <fg=gray>PinGate URL:</> <comment>' . $gateUrl . '</comment>');
 
-        $gateUrl = TargetHostSetup::askPinGateUrl($io, $dir, $gateUrlDefault);
-
+        $io->writeln('  <fg=gray>Building PinGate files (copying vendor — may take a minute)…</>');
         $gate = (new DeployRunner($projectRoot))->initGate($targetName, false, $dir, $gateUrl);
         self::mergeGateIntoConfig($configFile, $targetName, $targets);
 
