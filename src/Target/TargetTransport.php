@@ -126,9 +126,15 @@ final class TargetTransport
             if (is_string($value) && $value !== '') {
                 return true;
             }
+            // Env-backed stubs count as configured (credentials may be empty until .env is filled)
             if (is_array($value) && isset($value['_env'])) {
                 return true;
             }
+        }
+
+        // Empty string credentials still mean the transport block exists (fill .env later)
+        if ($name === 'ftp' || $name === 'ssh') {
+            return isset($block['host']) || isset($block['user']);
         }
 
         return false;

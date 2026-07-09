@@ -241,21 +241,17 @@ PHP;
 
     private static function exportField(string $target, string $transport, string $field, mixed $value): string
     {
-        if (is_array($value) && isset($value['_env'])) {
-            $envKey = (string) $value['_env'];
-            $default = $value['default'] ?? '';
+        if (ConfigWriter::isEnvField($field)) {
+            $envKey = is_array($value) && isset($value['_env'])
+                ? (string) $value['_env']
+                : ConfigWriter::envKeyFor($target, $field, $transport);
+            $default = is_array($value) ? ($value['default'] ?? '') : (string) $value;
 
             if ($default === '' || $default === null) {
                 return "env('{$envKey}', '')";
             }
 
             return "env('{$envKey}', " . var_export((string) $default, true) . ')';
-        }
-
-        if (is_string($value) && $value !== '' && ConfigWriter::isEnvField($field)) {
-            $envKey = ConfigWriter::envKeyFor($target, $field, $transport);
-
-            return "env('{$envKey}', " . var_export($value, true) . ')';
         }
 
         return var_export($value, true);

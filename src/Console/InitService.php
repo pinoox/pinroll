@@ -42,8 +42,36 @@ final class InitService
             }
         }
 
-        if ($needsSetup && $interactive && $io !== null) {
-            $targets = ConnectionSetup::collect($io, $targetName);
+        // -w always offers transport/credentials (even if config already exists)
+        if ($wizard && $interactive && $io !== null) {
+            $io->section('Pinroll wizard');
+            if (is_file($configFile) && !$force) {
+                $redo = $io->confirm('Update transport / FTP / SSH for "' . $targetName . '"?', true);
+            } else {
+                $redo = true;
+            }
+
+            if ($redo || $needsSetup) {
+                $hadGate = false;
+                if (is_file($configFile)) {
+                    try {
+                        $raw = Pinroll::targets()->raw($targetName);
+                        $hadGate = \Pinoox\Pinroll\Target\TargetGate::isConfigured($raw);
+                    } catch (\Throwable) {
+                        // new target
+                    }
+                }
+
+                $targets = ConnectionSetup::collect($io, $targetName, $this->platformRoot);
+                if ($hadGate) {
+                    $targets[$targetName]['gate'] = SampleConfig::gateBlock($targetName);
+                }
+                ConfigWriter::write($configFile, $targets);
+                Pinroll::configure([], $paths);
+                $needsSetup = false;
+            }
+        } elseif ($needsSetup && $interactive && $io !== null) {
+            $targets = ConnectionSetup::collect($io, $targetName, $this->platformRoot);
             ConfigWriter::write($configFile, $targets);
         } elseif ($needsSetup) {
             ConfigWriter::write($configFile, SampleConfig::targets(ProjectPackages::defaultPackage($this->platformRoot)));

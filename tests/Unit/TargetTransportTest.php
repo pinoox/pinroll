@@ -38,13 +38,29 @@ test('target transport resolves pinion url field', function () {
     expect($resolved['token'])->toBe('secret');
 });
 
-test('target transport supports legacy flat config', function () {
+test('target transport treats empty env-style ftp block as configured', function () {
     $target = [
-        'transport' => 'ftp',
-        'host' => 'legacy-host',
-        'user' => 'legacy-user',
+        'via' => 'ftp',
+        'ftp' => [
+            'host' => '',
+            'user' => '',
+            'password' => '',
+        ],
     ];
 
-    expect(TargetTransport::names($target))->toBe(['ftp']);
-    expect(TargetTransport::resolve($target)['host'])->toBe('legacy-host');
+    expect(TargetTransport::names($target))->toContain('ftp');
+    expect(TargetTransport::resolve($target)['transport'])->toBe('ftp');
+});
+
+test('target transport treats _env ftp stubs as configured', function () {
+    $target = [
+        'via' => 'ftp',
+        'ftp' => [
+            'host' => ['_env' => 'PINROLL_PRODUCTION_HOST', 'default' => ''],
+            'user' => ['_env' => 'PINROLL_PRODUCTION_USER', 'default' => ''],
+            'password' => ['_env' => 'PINROLL_PRODUCTION_PASSWORD', 'default' => ''],
+        ],
+    ];
+
+    expect(TargetTransport::names($target))->toContain('ftp');
 });

@@ -50,7 +50,7 @@ final class ConfigWizard
 
         if ($mode === 'ftp') {
             $bundlesCreated = (new ProjectInitializer($this->projectRoot, $this->force))->init();
-            $this->targets = ConnectionSetup::collect($this->io, 'production');
+            $this->targets = ConnectionSetup::collect($this->io, 'production', $this->projectRoot);
             ConfigWriter::write($configFile, $this->targets);
 
             return [

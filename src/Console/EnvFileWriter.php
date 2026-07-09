@@ -7,7 +7,7 @@ final class EnvFileWriter
     /**
      * @param array<string, string> $values
      */
-    public static function merge(string $path, array $values): void
+    public static function merge(string $path, array $values, string $newKeyComment = '# Pinroll'): void
     {
         $lines = is_file($path) ? file($path, FILE_IGNORE_NEW_LINES) : [];
         if ($lines === false) {
@@ -44,7 +44,7 @@ final class EnvFileWriter
                 $lines[] = '';
             }
 
-            $lines[] = '# Pinroll PinGate';
+            $lines[] = $newKeyComment;
             $lines[] = $line;
         }
 
