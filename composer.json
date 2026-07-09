@@ -4,7 +4,7 @@
   "description": "Pinroll — atomic release rollout, rollback, and PinGate delivery for Pinoox",
   "type": "library",
   "license": "MIT",
-  "keywords": ["pinoox", "pinroll", "deploy", "rollback", "release", "pingate", "devops", "ci/cd", "php" ],
+  "keywords": ["pinoox", "pinroll", "deploy", "rollback", "release", "pingate", "devops", "ci-cd", "php"],
   "authors": [
     {
       "name": "Pinoox",
