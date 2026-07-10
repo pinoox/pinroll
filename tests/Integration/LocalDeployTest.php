@@ -15,7 +15,6 @@ test('local deploy builds, transports, and commits in sandbox', function () {
             'apps' => ['com_test_app'],
         ],
     ]);
-    $fixture->writeEmptyBundle();
 
     $result = (new DeployRunner($fixture->root))->deploy('local', ['bundle' => 'test-empty']);
 
@@ -34,8 +33,7 @@ test('local deploy builds, transports, and commits in sandbox', function () {
 
 test('deploy runner build creates manifest and archive', function () {
     $fixture = new ProjectFixture();
-    $fixture->writeConfig(['local' => ['transport' => 'local', 'bundle' => 'test-empty']]);
-    $fixture->writeEmptyBundle();
+    $fixture->writeConfig(['local' => ['transport' => 'local']]);
 
     $build = (new DeployRunner($fixture->root))->build('test-empty');
 

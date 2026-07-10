@@ -4,6 +4,7 @@ namespace Pinoox\Pinroll\Console;
 
 use InvalidArgumentException;
 use Pinoox\Pinroll\Exception\PinrollException;
+use Pinoox\Pinroll\Host\HostGate;
 use Pinoox\Pinroll\Pinroll;
 use Pinoox\Pinroll\Support\ConfigFileLoader;
 use Pinoox\Pinroll\Support\HostDir;
@@ -12,11 +13,11 @@ use Pinoox\Pinroll\Support\PinrollAutoloader;
 use Pinoox\Pinroll\Support\ProjectPaths;
 use Pinoox\Pinroll\Support\PushConsole;
 use Pinoox\Pinroll\Support\PushProgress;
-use Pinoox\Pinroll\Target\TargetGate;
+use Pinoox\Pinroll\Target\TargetChecker;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * Connect host: ask deploy path + public domain, upload PinGate via FTP.
+ * Connect host: deploy path + site URL + PinGate setup (transport-aware).
  */
 final class ConnectService
 {
@@ -28,8 +29,13 @@ final class ConnectService
     /**
      * @return array<string, mixed>
      */
-    public function run(SymfonyStyle $io, string $targetName = 'production'): array
-    {
+    public function run(
+        SymfonyStyle $io,
+        string $hostName = 'production',
+        ?string $via = null,
+        bool $bootstrapFtp = false,
+        bool $reset = false,
+    ): array {
         PinrollAutoloader::register($this->projectRoot);
         $paths = new NativePathResolver($this->projectRoot);
         $configFile = ProjectPaths::configFile($paths);
@@ -40,20 +46,58 @@ final class ConnectService
             );
         }
 
-        Pinroll::configure([], $paths);
-        $raw = Pinroll::targets()->raw($targetName);
+        Pinroll::boot($paths);
+        $raw = Pinroll::hosts()->raw($hostName);
+        $resolvedVia = strtolower(trim($via ?? (string) ($raw['via'] ?? 'ftp')));
+        if ($resolvedVia === '') {
+            $resolvedVia = 'ftp';
+        }
 
-        $this->assertFtpReady($io, $raw, $targetName);
+        if ($bootstrapFtp && $resolvedVia === 'pinion') {
+            $resolvedVia = 'ftp';
+        }
 
-        $io->section('Connect — ' . $targetName);
+        if (!$reset && self::isSetupComplete($hostName, $resolvedVia)) {
+            return $this->verifyExisting($io, $hostName, $resolvedVia);
+        }
 
-        $dirDefault = HostDir::fromTarget($raw);
+        if ($reset) {
+            $io->section('Connect — reset setup');
+            $io->writeln('  <fg=gray>Re-running deploy path, site URL, and PinGate setup…</>');
+            $io->newLine();
+        }
+
+        return $this->runSetup($io, $hostName, $resolvedVia, $bootstrapFtp, $configFile, $paths, $raw);
+    }
+
+    /**
+     * @param array<string, mixed> $raw
+     * @return array<string, mixed>
+     */
+    private function runSetup(
+        SymfonyStyle $io,
+        string $hostName,
+        string $resolvedVia,
+        bool $bootstrapFtp,
+        string $configFile,
+        NativePathResolver $paths,
+        array $raw,
+    ): array {
+        if ($resolvedVia === 'ftp') {
+            $this->assertFtpReady($io, $raw, $hostName);
+        } elseif ($resolvedVia === 'ssh') {
+            $this->assertSshReady($io, $raw, $hostName);
+        }
+
+        $io->section('Connect — ' . $hostName . ' (' . $resolvedVia . ')');
+
+        $dirDefault = HostDir::fromHost($raw);
         if ($dirDefault === '') {
             $dirDefault = 'public_html';
         }
 
         $dir = HostDir::normalize((string) $io->ask(
-            'Deploy path (FTP path, e.g. public_html or public_html/shop)',
+            'Deploy path (e.g. public_html or public_html/shop)',
             $dirDefault,
         ));
         if ($dir === '') {
@@ -61,7 +105,10 @@ final class ConnectService
         }
 
         $web = HostDir::webPath($dir);
-        $siteDefault = 'https://' . TargetGate::EXAMPLE_DOMAIN . ($web !== '' ? '/' . $web : '');
+        $gate = HostGate::credentials($raw, $resolvedVia);
+        $siteDefault = $gate['url'] !== ''
+            ? (string) preg_replace('#/pingate\.php.*$#i', '', rtrim($gate['url'], '/'))
+            : 'https://' . HostGate::EXAMPLE_DOMAIN . ($web !== '' ? '/' . $web : '');
         $siteUrl = trim((string) $io->ask(
             'Public site URL (e.g. https://pinoox.com)',
             $siteDefault,
@@ -70,11 +117,21 @@ final class ConnectService
         $gateUrl = $this->resolveGateUrl($siteUrl, $dir);
         $io->writeln('  <fg=gray>PinGate URL:</> <comment>' . $gateUrl . '</comment>');
 
-        $this->saveTarget($configFile, $targetName, $dir, $gateUrl);
-        Pinroll::configure([], $paths);
+        $saveVia = $bootstrapFtp ? 'pinion' : $resolvedVia;
+        $this->saveHost($configFile, $hostName, $dir, $gateUrl, $saveVia);
+        Pinroll::boot($paths);
 
-        $io->writeln('  <fg=gray>Building & uploading PinGate…</>');
-        $io->writeln('  <fg=gray>(vendor copy + FTP — progress below)</>');
+        $upload = $resolvedVia !== 'pinion';
+        if ($resolvedVia === 'pinion') {
+            $io->note([
+                'Pinion transport: upload pingate.php + gate/ to the host manually,',
+                'or run: php pinoox pinroll:gate ' . $hostName . ' -z',
+                'Optional one-time FTP bootstrap: pinroll:connect --bootstrap-ftp',
+            ]);
+        } else {
+            $io->writeln('  <fg=gray>Building & uploading PinGate…</>');
+        }
+
         PushProgress::bind(
             static function (string $message, string $style = PushConsole::STYLE_DEFAULT) use ($io): void {
                 $formatted = PushConsole::format($message, $style);
@@ -98,28 +155,88 @@ final class ConnectService
 
         try {
             $gate = (new DeployRunner($this->projectRoot))->initGate(
-                $targetName,
+                $hostName,
                 false,
                 $dir,
                 $gateUrl,
                 false,
-                true,
+                $upload,
             );
         } finally {
             PushProgress::bind(null);
         }
 
-        return array_merge(['target' => $targetName], $gate);
+        return array_merge([
+            'host' => $hostName,
+            'target' => $hostName,
+            'mode' => 'setup',
+        ], $gate);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function verifyExisting(SymfonyStyle $io, string $hostName, string $resolvedVia): array
+    {
+        $raw = Pinroll::hosts()->raw($hostName);
+        $deployPath = HostDir::fromHost($raw);
+        $gate = HostGate::credentials($raw, $resolvedVia);
+
+        $io->section('Connect — ' . $hostName . ' (' . $resolvedVia . ')');
+        $io->writeln('  <fg=gray>Status</>   <info>configured</info> <fg=gray>(use --reset to run setup again)</>');
+        $io->writeln('  <fg=gray>Deploy path</>  <comment>' . $deployPath . '</comment>');
+        if ($gate['url'] !== '') {
+            $io->writeln('  <fg=gray>PinGate URL</>  <comment>' . $gate['url'] . '</comment>');
+        }
+        $io->newLine();
+        $io->writeln('  <fg=gray>Testing connection…</>');
+
+        $check = (new TargetChecker($this->projectRoot))->check($hostName, $resolvedVia);
+
+        return [
+            'host' => $hostName,
+            'target' => $hostName,
+            'mode' => 'verified',
+            'gate_url' => $gate['url'],
+            'deploy_path' => $deployPath,
+            'transport' => $resolvedVia,
+            'check' => $check,
+            'uploaded' => false,
+        ];
+    }
+
+    public static function isSetupComplete(string $hostName, string $via): bool
+    {
+        $resolved = Pinroll::hosts()->resolve($hostName, $via);
+        $raw = Pinroll::hosts()->raw($hostName);
+
+        if (HostDir::fromHost($resolved) === '') {
+            return false;
+        }
+
+        $gate = HostGate::credentials($raw, $via);
+        if ($gate['url'] === '') {
+            return false;
+        }
+
+        return match ($via) {
+            'ftp' => trim((string) ($resolved['host'] ?? '')) !== ''
+                && trim((string) ($resolved['user'] ?? '')) !== '',
+            'ssh' => trim((string) ($resolved['host'] ?? '')) !== ''
+                && trim((string) ($resolved['user'] ?? '')) !== '',
+            'pinion' => $gate['url'] !== '',
+            default => false,
+        };
     }
 
     /**
      * @param array<string, mixed> $raw
      */
-    private function assertFtpReady(SymfonyStyle $io, array $raw, string $targetName): void
+    private function assertFtpReady(SymfonyStyle $io, array $raw, string $hostName): void
     {
-        $hostKey = ConfigWriter::envKeyFor($targetName, 'host', 'ftp');
-        $userKey = ConfigWriter::envKeyFor($targetName, 'user', 'ftp');
-        $passKey = ConfigWriter::envKeyFor($targetName, 'password', 'ftp');
+        $hostKey = ConfigWriter::envKeyFor($hostName, 'host', 'ftp');
+        $userKey = ConfigWriter::envKeyFor($hostName, 'user', 'ftp');
+        $passKey = ConfigWriter::envKeyFor($hostName, 'password', 'ftp');
 
         $host = self::envOr($hostKey, $raw['ftp']['host'] ?? null);
         $user = self::envOr($userKey, $raw['ftp']['user'] ?? null);
@@ -139,6 +256,22 @@ final class ConnectService
 
         if ($password === '' && !$io->confirm('FTP password is empty. Continue anyway?', false)) {
             throw new PinrollException('FTP password required in .env (' . $passKey . ')');
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $raw
+     */
+    private function assertSshReady(SymfonyStyle $io, array $raw, string $hostName): void
+    {
+        $hostKey = ConfigWriter::envKeyFor($hostName, 'host', 'ssh');
+        $userKey = ConfigWriter::envKeyFor($hostName, 'user', 'ssh');
+
+        $host = self::envOr($hostKey, $raw['ssh']['host'] ?? null);
+        $user = self::envOr($userKey, $raw['ssh']['user'] ?? null);
+
+        if ($host === '' || $user === '') {
+            throw new PinrollException('Missing SSH credentials in .env for host ' . $hostName);
         }
     }
 
@@ -173,24 +306,28 @@ final class ConnectService
         }
     }
 
-    private function saveTarget(string $configFile, string $targetName, string $dir, string $gateUrl): void
+    private function saveHost(string $configFile, string $hostName, string $dir, string $gateUrl, string $via): void
     {
         $loaded = ConfigFileLoader::load($configFile);
-        /** @var array<string, array<string, mixed>> $targets */
-        $targets = is_array($loaded['targets'] ?? null) ? $loaded['targets'] : [];
-
-        if (!isset($targets[$targetName]) || !is_array($targets[$targetName])) {
-            $targets[$targetName] = SampleConfig::productionTarget($targetName);
+        /** @var array<string, array<string, mixed>> $hosts */
+        $hosts = is_array($loaded['hosts'] ?? null) ? $loaded['hosts'] : [];
+        if ($hosts === [] && is_array($loaded['targets'] ?? null)) {
+            $hosts = $loaded['targets'];
         }
 
-        $targets[$targetName]['dir'] = $dir;
-        $targets[$targetName]['via'] = (string) ($targets[$targetName]['via'] ?? 'ftp');
-        $targets[$targetName]['gate'] = SampleConfig::gateBlock($targetName, $gateUrl);
-
-        if (!isset($targets[$targetName]['ftp']) || !is_array($targets[$targetName]['ftp'])) {
-            $targets[$targetName]['ftp'] = SampleConfig::productionTarget($targetName)['ftp'];
+        if (!isset($hosts[$hostName]) || !is_array($hosts[$hostName])) {
+            $hosts[$hostName] = SampleConfig::productionHost($hostName);
         }
 
-        ConfigWriter::write($configFile, $targets);
+        $hosts[$hostName]['deploy_path'] = $dir;
+        $hosts[$hostName]['dir'] = $dir;
+        $hosts[$hostName]['via'] = $via;
+        $hosts[$hostName]['gate'] = SampleConfig::gateBlock($hostName, $gateUrl);
+
+        if (!isset($hosts[$hostName]['ftp']) || !is_array($hosts[$hostName]['ftp'])) {
+            $hosts[$hostName]['ftp'] = SampleConfig::productionHost($hostName)['ftp'];
+        }
+
+        ConfigWriter::writeHosts($configFile, $hosts, SampleConfig::globalDefaults());
     }
 }

@@ -9,21 +9,34 @@ final class PinGateClient
     /**
      * @return array<string, mixed>
      */
-    public static function apply(string $gateUrlBase, string $token, string $deployId): array
+    public static function install(string $gateUrlBase, string $token, string $deployId, array $options = []): array
     {
-        $url = rtrim($gateUrlBase, '/') . '/apply';
-        $response = self::request('POST', $url, $token, ['deploy_id' => $deployId]);
+        $url = rtrim($gateUrlBase, '/') . '/install';
+        $payload = array_merge(['deploy_id' => $deployId], $options);
+        $response = self::request('POST', $url, $token, $payload);
 
         if (!($response['success'] ?? false)) {
-            throw new PinrollException((string) ($response['error'] ?? 'PinGate apply failed.'));
+            $response = self::request('POST', rtrim($gateUrlBase, '/') . '/apply', $token, $payload);
+        }
+
+        if (!($response['success'] ?? false)) {
+            throw new PinrollException((string) ($response['error'] ?? 'PinGate install failed.'));
         }
 
         $data = $response['data'] ?? [];
         if (!is_array($data)) {
-            throw new PinrollException('PinGate apply returned invalid response.');
+            throw new PinrollException('PinGate install returned invalid response.');
         }
 
         return $data;
+    }
+
+    /**
+     * @deprecated Use install()
+     */
+    public static function apply(string $gateUrlBase, string $token, string $deployId): array
+    {
+        return self::install($gateUrlBase, $token, $deployId);
     }
 
     /**

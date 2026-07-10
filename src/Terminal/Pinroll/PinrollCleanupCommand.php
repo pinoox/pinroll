@@ -3,12 +3,14 @@
 namespace Pinoox\Terminal\Pinroll;
 
 use Pinoox\Component\Terminal;
+use Pinoox\Pinroll\Console\PinrollInput;
 use Pinoox\Pinroll\Exception\PinrollException;
+use Pinoox\Pinroll\Host\HostGate;
+use Pinoox\Pinroll\Host\RetentionPolicy;
 use Pinoox\Pinroll\Pinroll;
 use Pinoox\Pinroll\Support\NativePathResolver;
 use Pinoox\Pinroll\Support\StorageCleaner;
 use Pinoox\Pinroll\Target\PinGateClient;
-use Pinoox\Pinroll\Target\TargetGate;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -19,7 +21,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
     name: 'pinroll:cleanup',
-    description: 'Prune old Pinroll archives/tmp on a target (PinGate) or locally',
+    description: 'Prune old Pinroll archives/tmp on a host (PinGate) or locally',
     aliases: ['pinroll:prune'],
 )]
 class PinrollCleanupCommand extends Terminal
@@ -27,8 +29,9 @@ class PinrollCleanupCommand extends Terminal
     protected function configure(): void
     {
         $this
-            ->addArgument('target', InputArgument::OPTIONAL, 'Target name (omit with --local)', 'production')
-            ->addOption('keep', 'k', InputOption::VALUE_REQUIRED, 'Keep N newest incoming/releases/sessions', '3')
+            ->addArgument('host', InputArgument::OPTIONAL, 'Host name (omit with --local or default_host)')
+            ->addOption('host', null, InputOption::VALUE_REQUIRED, 'Host override')
+            ->addOption('keep', 'k', InputOption::VALUE_REQUIRED, 'Keep N newest incoming/releases/sessions')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show what would be deleted without deleting')
             ->addOption('local', null, InputOption::VALUE_NONE, 'Clean this machine only (not remote host)')
             ->addOption('incoming-only', null, InputOption::VALUE_NONE, 'Only prune storage/pinroll/incoming')
@@ -42,14 +45,19 @@ class PinrollCleanupCommand extends Terminal
 
         try {
             $root = defined('PINOOX_BASE_PATH') ? PINOOX_BASE_PATH : getcwd();
-            Pinroll::configure([], new NativePathResolver((string) $root));
+            Pinroll::boot(new NativePathResolver((string) $root));
 
-            $keep = max(0, (int) $input->getOption('keep'));
             $dryRun = (bool) $input->getOption('dry-run');
             $local = (bool) $input->getOption('local');
             $incomingOnly = (bool) $input->getOption('incoming-only');
-            $target = (string) $input->getArgument('target');
             $via = (string) ($input->getOption('via') ?: '');
+
+            $keepOption = $input->getOption('keep');
+            $keep = is_numeric($keepOption)
+                ? max(0, (int) $keepOption)
+                : (int) Pinroll::config()->get('keep', 3);
+
+            $hostName = $local ? 'local' : PinrollInput::hostName($input);
 
             $options = [
                 'keep' => $keep,
@@ -64,7 +72,7 @@ class PinrollCleanupCommand extends Terminal
 
             $io->writeln('');
             $io->block(
-                'pinroll:cleanup  →  ' . ($local ? 'local' : $target),
+                'pinroll:cleanup  →  ' . $hostName,
                 'INFO',
                 'fg=black;bg=cyan',
                 ' ',
@@ -73,7 +81,7 @@ class PinrollCleanupCommand extends Terminal
 
             $result = $local
                 ? $this->cleanLocal($options)
-                : $this->cleanRemote($target, $via !== '' ? $via : null, $options);
+                : $this->cleanRemote($hostName, $via !== '' ? $via : null, $options);
 
             $this->printResult($io, $result);
 
@@ -98,16 +106,23 @@ class PinrollCleanupCommand extends Terminal
      * @param array<string, mixed> $options
      * @return array<string, mixed>
      */
-    private function cleanRemote(string $targetName, ?string $via, array $options): array
+    private function cleanRemote(string $hostName, ?string $via, array $options): array
     {
-        $resolved = Pinroll::targets()->resolve($targetName, $via);
-        $raw = Pinroll::targets()->raw($targetName);
-        $gate = TargetGate::credentials($raw);
+        $resolved = Pinroll::hosts()->resolve($hostName, $via);
+        $raw = Pinroll::hosts()->raw($hostName);
+        $merged = array_merge($raw, $resolved);
+        $settings = RetentionPolicy::settings($merged);
+
+        if (!isset($options['keep']) || $options['keep'] === Pinroll::config()->get('keep', 3)) {
+            $options['keep'] = $settings['keep'];
+        }
+
+        $gate = HostGate::credentials($raw);
         $gateUrl = $gate['url'] !== '' ? $gate['url'] : (string) ($resolved['gate_url'] ?? '');
         $token = $gate['token'] !== '' ? $gate['token'] : (string) ($resolved['token'] ?? '');
 
         if ($gateUrl === '' || $token === '') {
-            throw new PinrollException(implode("\n", TargetGate::setupGuide($targetName)));
+            throw new PinrollException(implode("\n", HostGate::setupGuide($hostName)));
         }
 
         return PinGateClient::cleanup($gateUrl, $token, $options);

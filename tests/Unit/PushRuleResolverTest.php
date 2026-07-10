@@ -48,6 +48,14 @@ test('push rule resolver combines vendor and theme flags', function () {
     expect($plan['app'])->toBeFalse();
 });
 
+test('push rule resolver returns empty apps when host has no apps configured', function () {
+    $target = ['rules' => ['app' => ['app']]];
+
+    $plan = PushRuleResolver::resolve($target);
+
+    expect($plan['apps'])->toBe([]);
+});
+
 test('push rule resolver throws for unknown rule', function () {
     $target = [
         'apps' => ['com_pinoox_manager'],

@@ -11,7 +11,8 @@ use Pinoox\Pinroll\Rollout\RolloutEngine;
 use Pinoox\Pinroll\Rollout\RolloutSession;
 use Pinoox\Pinroll\Support\Config;
 use Pinoox\Pinroll\Support\IncomingRelease;
-use Pinoox\Pinroll\Support\StorageCleaner;
+use Pinoox\Pinroll\Host\HookRunner;
+use Pinoox\Pinroll\Host\RetentionPolicy;
 use Pinoox\Pinion\HttpHandler;
 use Pinoox\Pinion\Pinion;
 
@@ -42,7 +43,7 @@ final class PinGateHttpHandler
             $method === 'POST' && $path === 'push/init' => $this->pinion->init($input),
             $method === 'POST' && $path === 'push/upload' => $this->pinion->upload($input, $input['chunk'] ?? null),
             $method === 'POST' && $path === 'push/complete' => $this->handleComplete($input),
-            $method === 'POST' && $path === 'apply' => $this->handleApply($input),
+            $method === 'POST' && ($path === 'install' || $path === 'apply') => $this->handleInstall($input),
             $method === 'GET' && $path === 'status' => $this->handleStatus($input),
             $method === 'GET' && $path === 'incoming' => $this->handleIncoming(),
             $method === 'POST' && $path === 'rollback' => $this->handleRollback($input),
@@ -86,6 +87,11 @@ final class PinGateHttpHandler
         return $result;
     }
 
+    private function handleInstall(array $input): array
+    {
+        return $this->handleApply($input);
+    }
+
     /**
      * @param array<string, mixed> $input
      * @return array<string, mixed>
@@ -95,7 +101,7 @@ final class PinGateHttpHandler
         PlatformBootstrap::ensure($this->paths->root());
 
         $deployId = (string) ($input['deploy_id'] ?? '');
-        $result = $this->applyUploadedRelease($deployId);
+        $result = $this->applyUploadedRelease($deployId, '', false, $input);
 
         return ['deploy_id' => $result['deploy_id'], 'status' => 'applied'];
     }
@@ -234,10 +240,15 @@ final class PinGateHttpHandler
     }
 
     /**
+     * @param array<string, mixed> $retentionInput
      * @return array{deploy_id: string}
      */
-    private function applyUploadedRelease(string $deployId, string $checksum = '', bool $force = false): array
-    {
+    private function applyUploadedRelease(
+        string $deployId,
+        string $checksum = '',
+        bool $force = false,
+        array $retentionInput = [],
+    ): array {
         $incoming = $this->config->storage((string) $this->config->get('incoming_path', 'pinroll/incoming'));
         $archive = IncomingRelease::resolve($incoming, $deployId !== '' ? $deployId : null);
         $resolvedId = IncomingRelease::idFromArchive($archive);
@@ -262,9 +273,31 @@ final class PinGateHttpHandler
             $force ? 'rollback' : 'incoming',
             'pinion',
         );
+
+        $hostConfig = [
+            'hooks' => is_array($this->config->get('hooks')) ? $this->config->get('hooks') : [],
+            'keep' => array_key_exists('keep', $retentionInput)
+                ? (int) $retentionInput['keep']
+                : (int) $this->config->get('keep', 3),
+            'store' => array_key_exists('store', $retentionInput)
+                ? (string) $retentionInput['store']
+                : (string) $this->config->get('store', 'remote'),
+            'auto_clean' => array_key_exists('auto_clean', $retentionInput)
+                ? (bool) $retentionInput['auto_clean']
+                : (bool) $this->config->get('auto_clean', true),
+        ];
+
+        // On the host, cleanup only touches remote (host) storage.
+        if ($hostConfig['store'] === 'both') {
+            $hostConfig['store'] = 'remote';
+        } elseif ($hostConfig['store'] === 'local') {
+            $hostConfig['auto_clean'] = false;
+        }
+
         $this->engine->apply($manifest, $session, [
             'gate_url' => $this->detectBaseUrl(),
             'force' => $force,
+            'host' => $hostConfig,
         ]);
 
         return ['deploy_id' => $resolvedId];

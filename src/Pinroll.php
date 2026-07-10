@@ -3,11 +3,15 @@
 namespace Pinoox\Pinroll;
 
 use Pinoox\Pinroll\Contract\PathResolverInterface;
+use Pinoox\Pinroll\Host\HostConfig;
+use Pinoox\Pinroll\Host\HostResolver;
 use Pinoox\Pinroll\PinGate\PinGateHttpHandler;
 use Pinoox\Pinroll\Release\ReleaseBuilder;
 use Pinoox\Pinroll\Rollout\RolloutEngine;
 use Pinoox\Pinroll\Support\Config;
+use Pinoox\Pinroll\Support\ConfigFileLoader;
 use Pinoox\Pinroll\Support\NativePathResolver;
+use Pinoox\Pinroll\Support\ProjectPaths;
 use Pinoox\Pinroll\Target\TargetResolver;
 use Pinoox\Pinroll\Transport\TransportResolver;
 
@@ -31,6 +35,21 @@ final class Pinroll
         self::$engine = null;
     }
 
+    public static function boot(?PathResolverInterface $paths = null): void
+    {
+        $paths = $paths ?? self::paths();
+        $configFile = ProjectPaths::configFile($paths);
+        $overrides = [];
+
+        if ($configFile !== null && is_file($configFile)) {
+            /** @var array<string, mixed> $loaded */
+            $loaded = ConfigFileLoader::load($configFile);
+            $overrides = HostConfig::engineOverrides($loaded);
+        }
+
+        self::configure($overrides, $paths);
+    }
+
     public static function config(): Config
     {
         return new Config(self::paths(), self::$config);
@@ -41,6 +60,14 @@ final class Pinroll
         return self::$paths ?? new NativePathResolver();
     }
 
+    public static function hosts(?string $configPath = null): HostResolver
+    {
+        return new HostResolver(self::config(), $configPath);
+    }
+
+    /**
+     * @deprecated Use hosts()
+     */
     public static function targets(?string $configPath = null): TargetResolver
     {
         return new TargetResolver(self::config(), $configPath);

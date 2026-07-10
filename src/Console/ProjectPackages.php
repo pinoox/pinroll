@@ -2,6 +2,8 @@
 
 namespace Pinoox\Pinroll\Console;
 
+use Pinoox\Pinroll\Release\PlatformProfile;
+
 final class ProjectPackages
 {
     public static function defaultPackage(?string $projectRoot = null): string
@@ -17,14 +19,11 @@ final class ProjectPackages
     public static function list(?string $projectRoot = null): array
     {
         $root = $projectRoot ?? (defined('PINOOX_BASE_PATH') ? PINOOX_BASE_PATH : getcwd());
-        $appsDir = rtrim((string) $root, '/') . '/apps';
 
-        if (!is_dir($appsDir)) {
+        try {
+            return PlatformProfile::discoverPackages((string) $root);
+        } catch (\Throwable) {
             return [];
         }
-
-        return array_values(array_filter(scandir($appsDir) ?: [], static function (string $entry): bool {
-            return $entry !== '.' && $entry !== '..' && str_starts_with($entry, 'com_');
-        }));
     }
 }

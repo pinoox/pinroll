@@ -152,13 +152,22 @@ final class HostDir
     }
 
     /**
+     * @param array<string, mixed> $host
+     */
+    public static function fromHost(array $host): string
+    {
+        $value = $host['deploy_path'] ?? $host['dir'] ?? $host['host_dir'] ?? $host['install'] ?? '';
+
+        return self::normalize((string) $value);
+    }
+
+    /**
      * @param array<string, mixed> $target
+     * @deprecated Use fromHost()
      */
     public static function fromTarget(array $target): string
     {
-        $value = $target['dir'] ?? $target['host_dir'] ?? $target['install'] ?? '';
-
-        return self::normalize((string) $value);
+        return self::fromHost($target);
     }
 
     public static function dirFromGateUrl(?string $gateUrl): string
@@ -256,7 +265,7 @@ final class HostDir
             'pinion' => self::deployGuide($hostDir),
             'ssh', 'ftp' => [
                 'Upload via ' . $transport . ' to: ' . $incoming . '/',
-                'For pinroll:deploy / pinroll:apply: add top-level gate { url, token } (run pinroll:gate).',
+                'For pinroll:deploy / pinroll:install: add top-level gate { url, token } (run pinroll:gate).',
                 'Deploy root: ' . $guideDeploy,
             ],
             default => [],

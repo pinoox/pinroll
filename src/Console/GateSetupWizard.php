@@ -43,15 +43,15 @@ final class GateSetupWizard
             }
         }
 
-        $io->section('PinGate — remote apply (deploy)');
+        $io->section('PinGate — remote install');
         $io->text([
-            'PinGate applies staged releases on the host over HTTP (pinroll:deploy / pinroll:apply).',
+            'PinGate installs staged releases on the host over HTTP (pinroll:deploy / pinroll:install).',
             'With FTP configured, files upload automatically (no zip). Token + URL go to .env.',
             'Host needs platform vendor with pinoox/pinroll — export with: php pinoox pinroll:vendor',
         ]);
 
         if (!$io->confirm('Set up PinGate now?', true)) {
-            $io->warning('Without PinGate you can push but not apply remotely. Run: php pinoox pinroll:gate ' . $targetName);
+            $io->warning('Without PinGate you can push but not install remotely. Run: php pinoox pinroll:gate ' . $targetName);
 
             return ['gate_configured' => false, 'ready_for_push' => false];
         }

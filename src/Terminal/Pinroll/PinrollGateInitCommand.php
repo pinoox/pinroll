@@ -5,6 +5,7 @@ namespace Pinoox\Terminal\Pinroll;
 use Pinoox\Component\Terminal;
 use Pinoox\Pinroll\Console\DeployRunner;
 use Pinoox\Pinroll\Console\PinrollCli;
+use Pinoox\Pinroll\Console\PinrollInput;
 use Pinoox\Pinroll\Console\TargetHostSetup;
 use Pinoox\Pinroll\Support\PushConsole;
 use Pinoox\Pinroll\Support\PushProgress;
@@ -18,7 +19,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
     name: 'pinroll:gate',
-    description: 'Build PinGate and upload via FTP (or keep local / optional zip)',
+    description: 'Build PinGate and upload via FTP/SSH (or keep local / optional zip)',
     aliases: ['pinroll:gate:init'],
 )]
 class PinrollGateInitCommand extends Terminal
@@ -26,11 +27,13 @@ class PinrollGateInitCommand extends Terminal
     protected function configure(): void
     {
         $this
-            ->addArgument('target', InputArgument::OPTIONAL, 'Target name', 'production')
-            ->addOption('zip', 'z', InputOption::VALUE_NONE, 'Also build pinroll/deploy-{target}.zip (manual upload)')
-            ->addOption('no-upload', null, InputOption::VALUE_NONE, 'Skip FTP upload; keep files in pinroll/')
+            ->addArgument('host', InputArgument::OPTIONAL, 'Host name (omit when default_host is set)')
+            ->addOption('host', null, InputOption::VALUE_REQUIRED, 'Host override')
+            ->addOption('zip', 'z', InputOption::VALUE_NONE, 'Also build pinroll/deploy-{host}.zip (manual upload)')
+            ->addOption('no-upload', null, InputOption::VALUE_NONE, 'Skip upload; keep files in pinroll/')
             ->addOption('with-vendor', null, InputOption::VALUE_NONE, 'Bundle pinroll vendor into gate/ (slow; only if host lacks pinroll)')
-            ->addOption('rotate', null, InputOption::VALUE_NONE, 'Mint a new token (default: reuse PINROLL_*_TOKEN from .env)');
+            ->addOption('rotate', null, InputOption::VALUE_NONE, 'Mint a new token (default: reuse PINROLL_*_TOKEN from .env)')
+            ->addOption('via', null, InputOption::VALUE_REQUIRED, 'Transport override: ftp or ssh');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -40,13 +43,13 @@ class PinrollGateInitCommand extends Terminal
 
         try {
             $root = defined('PINOOX_BASE_PATH') ? PINOOX_BASE_PATH : getcwd();
-            $target = (string) $input->getArgument('target');
+            $hostName = PinrollInput::hostName($input);
             $zip = (bool) $input->getOption('zip');
             $upload = !(bool) $input->getOption('no-upload');
             $rotate = (bool) $input->getOption('rotate');
             $withVendor = (bool) $input->getOption('with-vendor');
 
-            $host = TargetHostSetup::resolveForGateInit($io, $input, (string) $root, $target);
+            $host = TargetHostSetup::resolveForGateInit($io, $input, (string) $root, $hostName);
             PushProgress::bind(
                 static function (string $message, string $style = PushConsole::STYLE_DEFAULT) use ($io): void {
                     $formatted = PushConsole::format($message, $style);
@@ -70,7 +73,7 @@ class PinrollGateInitCommand extends Terminal
 
             try {
                 $gate = (new DeployRunner((string) $root))->initGate(
-                    $target,
+                    $hostName,
                     $zip,
                     $host['dir'],
                     $host['gate_url'] !== '' ? $host['gate_url'] : null,
@@ -82,7 +85,7 @@ class PinrollGateInitCommand extends Terminal
                 PushProgress::bind(null);
             }
 
-            PinrollCli::printGateInitResult($io, array_merge(['target' => $target], $gate));
+            PinrollCli::printGateInitResult($io, array_merge(['host' => $hostName, 'target' => $hostName], $gate));
 
             return Command::SUCCESS;
         } catch (\Throwable $e) {

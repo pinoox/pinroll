@@ -4,6 +4,7 @@ namespace Pinoox\Terminal\Pinroll;
 
 use Pinoox\Component\Terminal;
 use Pinoox\Pinroll\Console\DeployRunner;
+use Pinoox\Pinroll\Console\PinrollInput;
 use Pinoox\Pinroll\Pinroll;
 use Pinoox\Pinroll\Support\NativePathResolver;
 use Pinoox\Pinroll\Support\PushProgress;
@@ -17,14 +18,15 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
     name: 'pinroll:rollback',
-    description: 'Rollback a target via PinGate (re-apply previous .pinx with force)',
+    description: 'Rollback a host via PinGate or local archive re-push (store=local)',
 )]
 class PinrollRollbackCommand extends Terminal
 {
     protected function configure(): void
     {
         $this
-            ->addArgument('target', InputArgument::OPTIONAL, 'Target name', 'production')
+            ->addArgument('host', InputArgument::OPTIONAL, 'Host name (omit when default_host is set)')
+            ->addOption('host', null, InputOption::VALUE_REQUIRED, 'Host override')
             ->addOption('deploy-id', null, InputOption::VALUE_REQUIRED, 'Deploy id to restore (omit = previous committed)');
     }
 
@@ -43,26 +45,26 @@ class PinrollRollbackCommand extends Terminal
 
         try {
             $root = defined('PINOOX_BASE_PATH') ? PINOOX_BASE_PATH : getcwd();
-            Pinroll::configure([], new NativePathResolver((string) $root));
+            Pinroll::boot(new NativePathResolver((string) $root));
 
-            $target = (string) $input->getArgument('target');
+            $hostName = PinrollInput::hostName($input);
             $deployId = $input->getOption('deploy-id');
             $deployId = is_string($deployId) && $deployId !== '' ? $deployId : null;
 
             $io->writeln('');
             $io->block(
-                'pinroll:rollback  →  ' . $target,
+                'pinroll:rollback  →  ' . $hostName,
                 'INFO',
                 'fg=black;bg=cyan',
                 ' ',
                 true,
             );
 
-            $result = (new DeployRunner((string) $root))->rollback($target, $deployId);
+            $result = (new DeployRunner((string) $root))->rollback($hostName, $deployId);
 
             $io->success('Rollback completed');
             $io->definitionList(
-                ['Target' => '<info>' . $target . '</info>'],
+                ['Host' => '<info>' . $hostName . '</info>'],
                 ['Channel' => '<comment>' . (string) ($result['channel'] ?? 'local') . '</comment>'],
                 ['Status' => '<info>' . (string) ($result['status'] ?? 'rolled_back') . '</info>'],
                 ['Deploy' => '<comment>' . (string) ($result['deploy_id'] ?? '—') . '</comment>'],

@@ -46,7 +46,7 @@ final class GateFtpDeployer
         $connection = $uploader->connect($host, $user, $password);
 
         try {
-            $deployRoot = HostDir::deployRoot(HostDir::fromTarget($resolvedTarget));
+            $deployRoot = HostDir::deployRoot(HostDir::fromHost($resolvedTarget));
             $prefix = $deployRoot === '.' ? '' : rtrim($deployRoot, '/') . '/';
 
             $remoteEntry = $prefix . HostDir::GATE_ENTRY;

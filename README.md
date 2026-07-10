@@ -1,49 +1,82 @@
 # Pinroll — Release Rollout Engine
 
-**Pinroll** (`pinoox/pinroll`) provides atomic release rollout, rollback, and PinGate delivery for Pinoox.
+**Pinroll** (`pinoox/pinroll`) **1.1.0** — atomic release rollout, rollback, and PinGate delivery for Pinoox.
 
 | Concept | Meaning |
 |---------|---------|
-| **Target** | Where to deploy (server/environment) |
-| **Bundle** | What to ship (platform-full, single-app, …) |
-| **Transport** | How to send (pinion, ssh, ftp, local) |
-| **PinGate** | Remote production entry point |
+| **Host** | Where to deploy (`production`, `staging`, …) |
+| **Bundle** | What to ship (auto-detect apps, or `--bundle=…`) |
+| **Transport** | How to send (`ftp`, `ssh`, `pinion`, `local`) |
+| **PinGate** | Remote HTTP entry for install / status / rollback |
+
+## Documentation
+
+Full guides (setup, hosts, retention, rollback, CLI):
+
+- [Pinroll — release & deploy](https://github.com/pinoox/docs/blob/master/en/deploy/pinroll.md) (EN)
+- [Pinroll — انتشار و دیپلوی](https://github.com/pinoox/docs/blob/master/fa/deploy/pinroll.md) (FA)
+- [Pinroll overview](https://github.com/pinoox/docs/blob/master/en/advanced/pinroll.md)
 
 ## Install
 
+On a Pinoox **platform** project:
+
 ```bash
-composer require pinoox/pinion pinoox/pinroll
+composer require --dev pinoox/pinroll
 ```
+
+## Quick start
+
+```bash
+php pinoox pinroll:init
+# fill PINROLL_* credentials in .env
+php pinoox pinroll:connect
+php pinoox pinroll:apps
+php pinoox pinroll:check
+php pinoox pinroll:deploy
+```
+
+| Step | Command | What it does |
+|------|---------|--------------|
+| 1 | `pinroll:init` | Scaffold `pinroll/pinroll.config.php` |
+| 2 | Edit `.env` | Set `PINROLL_*` FTP/SSH keys |
+| 3 | `pinroll:connect` | Deploy path, site URL, upload PinGate (`--reset` to re-run) |
+| 4 | `pinroll:apps` | Set default packages for the host |
+| 5 | `pinroll:check` | Verify transport + PinGate |
+| 6 | `pinroll:deploy` | Build, upload, and install (go live) |
 
 ## CLI
 
 ```bash
 php pinoox pinroll:init
 php pinoox pinroll:connect
-php pinoox pinroll:push production
-php pinoox pinroll:deploy production
-php pinoox pinroll:apply production
-php pinoox pinroll:push staging-app --package=com_pinoox_developer
+php pinoox pinroll:apps
+php pinoox pinroll:push
+php pinoox pinroll:deploy
+php pinoox pinroll:install
+php pinoox pinroll:push --app=com_pinoox_developer
 php pinoox pinroll:build --bundle=single-app --package=com_pinoox_developer
-php pinoox pinroll:status production
+php pinoox pinroll:status
 php pinoox pinroll:history
-php pinoox pinroll:rollback production
-php pinoox pinroll:gate production
+php pinoox pinroll:rollback
+php pinoox pinroll:cleanup
+php pinoox pinroll:gate
 php pinoox pinroll:vendor
 php pinoox pinroll:pull --server=https://releases.example.com
 ```
 
 - `pinroll:init` — scaffold `pinroll/` + `.env` key stubs (no prompts)
-- `pinroll:connect` — ask deploy path + site URL, upload PinGate via FTP
-- `pinroll:vendor` — export platform `vendor/` for host install or core update (`pinroll/vendor.zip`)
-- `pinroll:gate` — rebuild/upload PinGate (`-z` optional zip; `--no-upload` keep local files)
-- `pinroll:check` — verify target connectivity before push
-- `pinroll:push` — build and upload only (no apply)
-- `pinroll:deploy` — push + apply via PinGate (go live)
-- `pinroll:apply` — apply a staged release on the target
-- `pinroll:pull` — pull newer manifest from release server (alias: `pinroll:poll`)
-
-Non-interactive wizard: `php pinoox pinroll:init -w`
+- `pinroll:connect` — configure host + upload PinGate; verifies if already set (`--reset` to redo)
+- `pinroll:apps` — set `hosts.*.apps` (interactive or `--apps=`)
+- `pinroll:check` — verify host connectivity before push
+- `pinroll:push` — build and upload only (no install)
+- `pinroll:deploy` — push + install via PinGate (go live)
+- `pinroll:install` — install a staged release (`pinroll:apply` is a deprecated alias)
+- `pinroll:rollback` — switch the host back to a previous release
+- `pinroll:cleanup` — prune local/remote archives by `keep` / `store`
+- `pinroll:gate` — rebuild/upload PinGate (`-z` zip; `--no-upload` keep local)
+- `pinroll:vendor` — export platform `vendor/` (`pinroll/vendor.zip`)
+- `pinroll:pull` — pull newer manifest from a release server (alias: `pinroll:poll`)
 
 ## Tests
 
@@ -52,4 +85,6 @@ composer test
 composer test:platform
 ```
 
-MIT
+## License
+
+MIT — [Pinoox](https://www.pinoox.com)

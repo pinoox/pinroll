@@ -4,8 +4,10 @@ namespace Pinoox\Terminal\Pinroll;
 
 use Pinoox\Component\Terminal;
 use Pinoox\Pinroll\Console\PinrollCli;
+use Pinoox\Pinroll\Console\PinrollInput;
+use Pinoox\Pinroll\Host\HostChecker;
 use Pinoox\Pinroll\Pinroll;
-use Pinoox\Pinroll\Target\TargetChecker;
+use Pinoox\Pinroll\Support\NativePathResolver;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -16,14 +18,15 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
     name: 'pinroll:check',
-    description: 'Check configured targets',
+    description: 'Check configured hosts',
 )]
 class PinrollCheckCommand extends Terminal
 {
     protected function configure(): void
     {
         $this
-            ->addArgument('target', InputArgument::OPTIONAL, 'Target name (omit for all)')
+            ->addArgument('host', InputArgument::OPTIONAL, 'Host name (omit for all)')
+            ->addOption('host', null, InputOption::VALUE_REQUIRED, 'Host override')
             ->addOption('via', null, InputOption::VALUE_REQUIRED, 'Check a specific transport: ftp, ssh, pinion')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output as JSON');
     }
@@ -34,12 +37,15 @@ class PinrollCheckCommand extends Terminal
         $io = new SymfonyStyle($input, $output);
 
         try {
-            $checker = new TargetChecker();
-            $target = $input->getArgument('target');
+            $root = defined('PINOOX_BASE_PATH') ? PINOOX_BASE_PATH : getcwd();
+            Pinroll::boot(new NativePathResolver((string) $root));
+
+            $checker = new HostChecker();
+            $host = PinrollInput::resolveOptionalHost($input);
             $via = (string) ($input->getOption('via') ?: '');
 
-            $results = $target !== null && $target !== ''
-                ? [$checker->check((string) $target, $via !== '' ? $via : null)]
+            $results = $host !== null
+                ? [$checker->check($host, $via !== '' ? $via : null)]
                 : $checker->checkAll();
 
             if ($input->getOption('json')) {

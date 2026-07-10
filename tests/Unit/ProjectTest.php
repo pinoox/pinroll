@@ -7,7 +7,7 @@ use Pinoox\Pinroll\Target\TargetResolver;
 use Pinoox\Pinroll\Tests\Support\ProjectFixture;
 use Pinoox\Pinroll\Support\Config;
 
-test('project initializer scaffolds pinroll config and bundles', function () {
+test('project initializer scaffolds pinroll config without bundle files', function () {
     $fixture = new ProjectFixture();
     $paths = new NativePathResolver($fixture->root);
 
@@ -15,8 +15,7 @@ test('project initializer scaffolds pinroll config and bundles', function () {
 
     expect($written)->not->toBeEmpty();
     expect(ProjectPaths::isInitialized($paths))->toBeTrue();
-    expect(is_file(ProjectPaths::bundleFile($paths, 'single-app')))->toBeTrue();
-    expect(is_file(ProjectPaths::bundleFile($paths, 'platform-full')))->toBeTrue();
+    expect(is_file(ProjectPaths::bundleFile($paths, 'single-app')))->toBeFalse();
 
     $fixture->cleanup();
 });
@@ -38,10 +37,8 @@ test('target resolver loads configured targets', function () {
         'local' => [
             'transport' => 'local',
             'path' => $fixture->incomingDir(),
-            'bundle' => 'test-empty',
         ],
     ]);
-    $fixture->writeEmptyBundle();
 
     $resolver = new TargetResolver(new Config($paths, ['storage_path' => $fixture->root . '/storage']));
     $target = $resolver->resolve('local');

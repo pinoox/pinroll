@@ -30,6 +30,7 @@ test('storage cleaner keeps newest incoming and removes older', function () {
         'sessions' => false,
         'releases' => false,
         'backups' => false,
+        'pinx_export' => false,
     ]);
 
     expect($result['files_deleted'])->toBe(1)
@@ -65,6 +66,7 @@ test('storage cleaner dry-run does not delete', function () {
         'sessions' => false,
         'releases' => false,
         'backups' => false,
+        'pinx_export' => false,
     ]);
 
     expect($result['dry_run'])->toBeTrue()
@@ -76,4 +78,40 @@ test('storage cleaner dry-run does not delete', function () {
     @rmdir($root . '/storage/pinroll');
     @rmdir($root . '/storage');
     @rmdir($root);
+});
+
+test('storage cleaner prunes apps pinx export to keep newest', function () {
+    $root = sys_get_temp_dir() . '/pinroll-clean-pinx-' . uniqid('', true);
+    $export = $root . '/apps/com_test_app/pinx/export';
+    mkdir($export, 0755, true);
+    mkdir($root . '/storage', 0755, true);
+
+    $files = [];
+    foreach ([1, 2, 3, 4] as $i) {
+        $path = $export . '/com_test_app_v1_20260710_0' . $i . '.pinx';
+        file_put_contents($path, str_repeat('x', 10 * $i));
+        touch($path, time() - (5 - $i) * 60);
+        $files[$i] = $path;
+    }
+
+    $paths = new NativePathResolver($root);
+    $config = new Config($paths, ['storage_path' => $root . '/storage']);
+
+    $result = (new StorageCleaner($config))->clean([
+        'keep' => 2,
+        'dry_run' => false,
+        'incoming' => false,
+        'tmp' => false,
+        'staging' => false,
+        'sessions' => false,
+        'releases' => false,
+        'backups' => false,
+        'pinx_export' => true,
+    ]);
+
+    expect($result['files_deleted'])->toBe(2)
+        ->and(is_file($files[4]))->toBeTrue()
+        ->and(is_file($files[3]))->toBeTrue()
+        ->and(is_file($files[2]))->toBeFalse()
+        ->and(is_file($files[1]))->toBeFalse();
 });

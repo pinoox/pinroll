@@ -10,6 +10,8 @@ use Pinoox\Pinroll\Release\ReleaseManifest;
 use Pinoox\Pinroll\Release\ReleaseVerifier;
 use Pinoox\Pinroll\Rollback\RollbackManager;
 use Pinoox\Pinroll\Strategy\StrategyDetector;
+use Pinoox\Pinroll\Host\HookRunner;
+use Pinoox\Pinroll\Host\RetentionPolicy;
 use Pinoox\Pinroll\Support\Config;
 
 final class RolloutEngine
@@ -57,6 +59,12 @@ final class RolloutEngine
 
             $staging = $strategy->stage($manifest, $manifest->archivePath(), $session, $context);
 
+            $host = is_array($context['host'] ?? null) ? $context['host'] : [];
+            $cwd = $this->paths->root();
+            if ($host !== []) {
+                HookRunner::run($host, ['before_install'], $session, $cwd, true);
+            }
+
             $skipInstall = (bool) ($manifest->deploy()['skip_install'] ?? false);
             if ($this->bridge !== null && $this->bridge->isAvailable()) {
                 if ($skipInstall) {
@@ -75,6 +83,10 @@ final class RolloutEngine
                 }
             }
 
+            if ($host !== []) {
+                HookRunner::run($host, ['after_install'], $session, $cwd, true);
+            }
+
             $baseUrl = isset($context['gate_url']) ? (string) $context['gate_url'] : null;
             $this->health->check($manifest, $session, $baseUrl);
 
@@ -85,6 +97,10 @@ final class RolloutEngine
                 'deploy_id' => $manifest->deployId(),
                 'status' => 'committed',
             ]));
+
+            if ($host !== []) {
+                RetentionPolicy::cleanAfterInstall($host, $context);
+            }
         } catch (\Throwable $e) {
             $this->rollback->rollback($manifest, $session);
             $session->markFailed($e->getMessage());

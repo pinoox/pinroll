@@ -19,7 +19,12 @@ test('config writer renders env backed fields via template', function () {
         ],
     ]);
 
-    expect($rendered)->toContain('Pinroll targets')
+    expect($rendered)->toContain('Pinroll hosts')
+        ->toContain("'hosts' => [")
+        ->toContain("'deploy_path'")
+        ->toContain('// Default host when CLI omits the host argument')
+        ->toContain('SSH — SFTP upload and remote install')
+        ->toContain('Pinion — chunked HTTP upload through PinGate')
         ->toContain("env('PINROLL_PRODUCTION_URL', 'https://pinoox.com/pingate.php?route=')")
         ->toContain("env('PINROLL_PRODUCTION_TOKEN', '')")
         ->toContain("'gate' => [")

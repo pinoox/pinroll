@@ -21,7 +21,8 @@ final class StorageCleaner
      *     staging?: bool,
      *     sessions?: bool,
      *     releases?: bool,
-     *     backups?: bool
+     *     backups?: bool,
+     *     pinx_export?: bool
      * } $options
      * @return array{
      *     dry_run: bool,
@@ -43,6 +44,7 @@ final class StorageCleaner
             'sessions' => $options['sessions'] ?? true,
             'releases' => $options['releases'] ?? true,
             'backups' => $options['backups'] ?? true,
+            'pinx_export' => $options['pinx_export'] ?? true,
         ];
 
         $deleted = [];
@@ -62,6 +64,14 @@ final class StorageCleaner
 
         if ($scopes['sessions']) {
             $this->cleanOldFiles($this->config->storage('sessions'), $keep, $dryRun, $deleted, $kept, 'sessions');
+            $this->cleanOldFiles(
+                $this->config->storage('pinroll/sessions'),
+                $keep,
+                $dryRun,
+                $deleted,
+                $kept,
+                'pinroll/sessions',
+            );
         }
 
         if ($scopes['releases']) {
@@ -70,6 +80,10 @@ final class StorageCleaner
 
         if ($scopes['backups']) {
             $this->cleanReleaseLikeDirs($this->config->storage('backups'), $keep, $dryRun, $deleted, $kept, 'backups');
+        }
+
+        if ($scopes['pinx_export']) {
+            $this->cleanPinxExports($keep, $dryRun, $deleted, $kept);
         }
 
         $bytes = array_sum(array_column($deleted, 'bytes'));
@@ -117,6 +131,61 @@ final class StorageCleaner
     }
 
     /**
+     * Prune app pinx export folders — keep N newest .pinx files per export directory.
+     *
+     * @param list<array{path: string, bytes: int, reason: string}> $deleted
+     * @param list<string> $kept
+     */
+    private function cleanPinxExports(int $keep, bool $dryRun, array &$deleted, array &$kept): void
+    {
+        $root = $this->config->paths()->root();
+        foreach (AppBuildPaths::discoverExportDirs($root) as $exportDir) {
+            $files = [];
+            foreach (scandir($exportDir) ?: [] as $name) {
+                if ($name === '.' || $name === '..') {
+                    continue;
+                }
+
+                $path = $exportDir . '/' . $name;
+                if (!is_file($path) || !str_ends_with(strtolower($name), '.pinx')) {
+                    continue;
+                }
+
+                $files[] = [
+                    'path' => $path,
+                    'name' => $name,
+                    'mtime' => (int) filemtime($path),
+                    'bytes' => (int) filesize($path),
+                ];
+            }
+
+            usort($files, static fn (array $a, array $b): int => $b['mtime'] <=> $a['mtime']);
+
+            $relBase = AppBuildPaths::displayPath($root, $exportDir);
+
+            foreach ($files as $index => $file) {
+                $label = $relBase . '/' . $file['name'];
+
+                if ($index < $keep) {
+                    $kept[] = $label;
+
+                    continue;
+                }
+
+                if (!$dryRun) {
+                    @unlink($file['path']);
+                }
+
+                $deleted[] = [
+                    'path' => $label,
+                    'bytes' => $file['bytes'],
+                    'reason' => 'older than keep=' . $keep,
+                ];
+            }
+        }
+    }
+
+    /**
      * @param list<array{path: string, bytes: int, reason: string}> $deleted
      * @param list<string> $kept
      */
@@ -125,11 +194,13 @@ final class StorageCleaner
         $releasesRoot = $this->config->storage('releases');
         $current = $releasesRoot . '/current';
         $currentTarget = is_link($current) ? (string) readlink($current) : '';
+        $currentName = $currentTarget !== '' ? basename($currentTarget) : '';
 
+        // Keep N newest by mtime; never delete the active "current" release.
         $this->cleanReleaseLikeDirs($releasesRoot, $keep, $dryRun, $deleted, $kept, 'releases', [
             'current',
-            $currentTarget !== '' ? basename($currentTarget) : '',
-        ]);
+            $currentName,
+        ], countTowardKeep: true);
     }
 
     /**
@@ -145,6 +216,7 @@ final class StorageCleaner
         array &$kept,
         string $label,
         array $alwaysKeep = [],
+        bool $countTowardKeep = false,
     ): void {
         if (!is_dir($root)) {
             return;
@@ -176,11 +248,12 @@ final class StorageCleaner
 
         foreach ($dirs as $dir) {
             $name = $dir['name'];
-            $mustKeep = in_array($name, $alwaysKeep, true) || $keptCount < $keep;
+            $isProtected = in_array($name, $alwaysKeep, true);
+            $mustKeep = $isProtected || $keptCount < $keep;
 
             if ($mustKeep) {
                 $kept[] = $label . '/' . $name;
-                if (!in_array($name, $alwaysKeep, true)) {
+                if (!$isProtected || $countTowardKeep) {
                     $keptCount++;
                 }
 

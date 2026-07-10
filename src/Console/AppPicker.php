@@ -2,11 +2,39 @@
 
 namespace Pinoox\Pinroll\Console;
 
-use Symfony\Component\Console\Question\ChoiceQuestion;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 final class AppPicker
 {
+    private const ALL_KEY = '__all__';
+
+    /**
+     * Interactive multiselect — at least one app required (push/deploy).
+     *
+     * @return list<string>
+     */
+    public static function selectRequired(SymfonyStyle $io, ?string $projectRoot = null): array
+    {
+        $apps = ProjectPackages::list($projectRoot);
+
+        if ($apps === []) {
+            $io->error('No apps found in apps/. Install an app package first.');
+
+            return [];
+        }
+
+        if (count($apps) === 1) {
+            $use = $io->confirm('Push app <comment>' . $apps[0] . '</comment>?', true);
+            if (!$use) {
+                return [];
+            }
+
+            return $apps;
+        }
+
+        return self::selectFromList($io, $apps);
+    }
+
     /**
      * @return list<string>|null Apps list, or null to skip (add apps[] in config later)
      */
@@ -15,7 +43,7 @@ final class AppPicker
         $apps = ProjectPackages::list($projectRoot);
 
         if ($apps === []) {
-            $io->warning('No apps in apps/. Add apps[] to pinroll.config.php later.');
+            $io->warning('No apps in apps/. Run <comment>php pinoox pinroll:apps</comment> after installing an app.');
 
             return null;
         }
@@ -29,7 +57,7 @@ final class AppPicker
         $io->section('Apps');
 
         $mode = (string) $io->choice(
-            'How do you want to set apps for this target?',
+            'How do you want to set apps for this host?',
             [
                 'select' => 'Select from list',
                 'all' => 'All apps (' . count($apps) . ')',
@@ -51,28 +79,21 @@ final class AppPicker
      */
     private static function selectFromList(SymfonyStyle $io, array $apps): array
     {
-        $choices = array_values($apps);
+        $apps = array_values($apps);
+        $menu = self::menuChoices($apps);
 
-        foreach ($choices as $index => $app) {
-            $io->writeln(sprintf('  <comment>%d</comment> %s', $index, $app));
-        }
+        self::printMenu($io, $apps);
 
-        $io->newLine();
+        $default = '1';
+        $answer = trim((string) $io->ask(
+            'Select apps (<comment>0</comment> = all, or comma-separated numbers, e.g. 1,3)',
+            $default,
+        ));
 
-        $question = new ChoiceQuestion(
-            'Select apps (comma-separated numbers, e.g. 0,1)',
-            $choices,
-            '0',
-        );
-        $question->setMultiselect(true);
-
-        /** @var list<int|string>|int|string $selected */
-        $selected = $io->askQuestion($question);
-
-        $resolved = self::resolveSelection($choices, $selected);
+        $resolved = self::resolveNumberInput($answer, $menu, $apps);
 
         if ($resolved === []) {
-            $io->note('No apps selected. Add apps[] to pinroll.config.php later.');
+            $io->warning('No apps selected.');
 
             return [];
         }
@@ -83,32 +104,80 @@ final class AppPicker
     }
 
     /**
-     * @param list<string> $choices
-     * @param list<int|string>|int|string $selected
+     * @param list<string> $apps
+     * @return array<int, string>
+     */
+    private static function menuChoices(array $apps): array
+    {
+        $menu = [0 => self::ALL_KEY];
+
+        foreach ($apps as $index => $app) {
+            $menu[$index + 1] = $app;
+        }
+
+        return $menu;
+    }
+
+    /**
+     * @param list<string> $apps
+     */
+    private static function printMenu(SymfonyStyle $io, array $apps): void
+    {
+        $io->writeln(sprintf('  <comment>0</comment>  <info>All apps</info> <fg=gray>(%d)</>', count($apps)));
+
+        foreach ($apps as $index => $app) {
+            $io->writeln(sprintf('  <comment>%d</comment>  %s', $index + 1, $app));
+        }
+
+        $io->newLine();
+    }
+
+    /**
+     * @param array<int, string> $menu
+     * @param list<string> $apps
      * @return list<string>
      */
-    private static function resolveSelection(array $choices, array|int|string $selected): array
+    private static function resolveNumberInput(string $answer, array $menu, array $apps): array
     {
-        if (!is_array($selected)) {
-            $selected = [$selected];
+        if ($answer === '') {
+            return [];
+        }
+
+        $parts = array_values(array_filter(
+            array_map('trim', preg_split('/[,\s]+/', $answer) ?: []),
+            static fn (string $part): bool => $part !== '',
+        ));
+        if ($parts === []) {
+            return [];
+        }
+
+        if (in_array('0', $parts, true)) {
+            return $apps;
         }
 
         $resolved = [];
-        foreach ($selected as $item) {
-            if (is_int($item) && isset($choices[$item])) {
-                $resolved[] = $choices[$item];
+        foreach ($parts as $part) {
+            if (!ctype_digit($part)) {
                 continue;
             }
 
-            if (is_string($item) && ctype_digit($item) && isset($choices[(int) $item])) {
-                $resolved[] = $choices[(int) $item];
+            $number = (int) $part;
+            if ($number === 0) {
+                return $apps;
+            }
+
+            if (!isset($menu[$number])) {
                 continue;
             }
 
-            $key = array_search((string) $item, $choices, true);
-            $resolved[] = $key !== false ? $choices[$key] : (string) $item;
+            $value = $menu[$number];
+            if ($value === self::ALL_KEY) {
+                return $apps;
+            }
+
+            $resolved[] = $value;
         }
 
-        return array_values(array_unique(array_filter(array_map('strval', $resolved))));
+        return array_values(array_unique($resolved));
     }
 }

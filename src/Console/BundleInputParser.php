@@ -7,11 +7,11 @@ use Pinoox\Pinroll\Exception\PinrollException;
 final class BundleInputParser
 {
     public const HELP = <<<'TEXT'
-Release bundle options:
-  platform              full platform (pincore + system apps) — recommended for production
-  pincore               pincore / platform core only
+Release build options (optional — auto-detected from apps/ by default):
+  platform              full platform (core + all apps in apps/)
+  pincore               platform core only
   com_package_name      one app package
-  com_a, com_b          multiple apps (saved as packages array)
+  com_a, com_b          multiple apps
 TEXT;
 
     /**

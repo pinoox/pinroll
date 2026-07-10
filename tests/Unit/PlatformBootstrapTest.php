@@ -17,13 +17,21 @@ test('platform bootstrap requires launcher on host', function () {
 });
 
 test('platform bootstrap succeeds on local platform root', function () {
-    $root = dirname(__DIR__, 3) . '/platform';
+    $root = '/Applications/MAMP/htdocs/platform';
     if (!is_file($root . '/platform/launcher/core-path.php')) {
-        $root = '/Applications/MAMP/htdocs/platform';
+        $root = dirname(__DIR__, 3) . '/platform';
     }
 
     if (!is_file($root . '/platform/launcher/core-path.php')) {
-        $this->markTestSkipped('Platform fixture not available');
+        test()->markTestSkipped('Platform fixture not available');
+    }
+
+    if (defined('PINOOX_BASE_PATH')) {
+        $existing = rtrim(str_replace('\\', '/', (string) PINOOX_BASE_PATH), '/');
+        $expected = rtrim(str_replace('\\', '/', $root), '/');
+        if ($existing !== $expected) {
+            test()->markTestSkipped('PINOOX_BASE_PATH already set to a different root.');
+        }
     }
 
     PlatformBootstrap::ensure($root);

@@ -83,9 +83,17 @@ final class PushRuleResolver
      */
     private static function apps(array $target, array $cli): array
     {
-        $package = $cli['package'] ?? null;
-        if (is_string($package) && $package !== '') {
-            return [$package];
+        $app = $cli['app'] ?? $cli['package'] ?? null;
+        if (is_string($app) && $app !== '') {
+            return [$app];
+        }
+
+        $appsList = $cli['apps'] ?? null;
+        if (is_string($appsList) && $appsList !== '') {
+            return array_values(array_filter(array_map('trim', explode(',', $appsList))));
+        }
+        if (is_array($appsList) && $appsList !== []) {
+            return array_values(array_filter(array_map('strval', $appsList)));
         }
 
         $apps = $target['apps'] ?? null;
@@ -95,7 +103,7 @@ final class PushRuleResolver
                 return [$fallback];
             }
 
-            return ProjectPackages::list();
+            return [];
         }
 
         return array_values(array_filter(array_map('strval', $apps)));
@@ -121,10 +129,19 @@ final class PushRuleResolver
         }
 
         $parts = [];
-        foreach (['app', 'vendor', 'theme'] as $part) {
+        foreach (['vendor', 'theme'] as $part) {
             if (!empty($cli[$part])) {
                 $parts[] = $part;
             }
+        }
+
+        $hasAppPackage = (is_string($cli['app'] ?? null) && $cli['app'] !== '')
+            || (is_string($cli['package'] ?? null) && $cli['package'] !== '')
+            || !empty($cli['apps'])
+            || !empty($cli['all']);
+
+        if ($parts === [] || $hasAppPackage) {
+            $parts[] = 'app';
         }
 
         if ($parts !== []) {

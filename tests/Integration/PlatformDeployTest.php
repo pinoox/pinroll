@@ -17,27 +17,6 @@ test('platform local deploy with empty test bundle', function () {
         test()->markTestSkipped('Platform root not found at ' . $platform);
     }
 
-    $bundleFile = $platform . '/pinroll/bundles/test-empty.php';
-    $hadBundle = is_file($bundleFile);
-
-    if (!is_dir($platform . '/pinroll/bundles')) {
-        mkdir($platform . '/pinroll/bundles', 0755, true);
-    }
-
-    if (!$hadBundle) {
-        file_put_contents($bundleFile, <<<'PHP'
-<?php
-
-return [
-    'name' => 'test-empty',
-    'scope' => 'app',
-    'build' => [],
-    'depends_check' => false,
-];
-PHP
-        );
-    }
-
     if (!is_file($platform . '/pinroll/pinroll.config.php')) {
         test()->markTestSkipped('Run `php pinoox pinroll:init` in the platform first.');
     }
@@ -52,8 +31,4 @@ PHP
 
     expect($result['status'])->toBe('committed');
     expect(glob($incoming . '/*') ?: [])->not->toBeEmpty();
-
-    if (!$hadBundle && is_file($bundleFile)) {
-        unlink($bundleFile);
-    }
 })->group('platform');

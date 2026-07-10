@@ -13,7 +13,7 @@ final class TargetChecker
         private readonly ?string $projectRoot = null,
     ) {
         $root = $this->projectRoot ?? (defined('PINOOX_BASE_PATH') ? PINOOX_BASE_PATH : getcwd());
-        Pinroll::configure([], new NativePathResolver((string) $root));
+        Pinroll::boot(new NativePathResolver((string) $root));
     }
 
     /**
@@ -22,7 +22,7 @@ final class TargetChecker
     public function checkAll(): array
     {
         $results = [];
-        foreach (Pinroll::targets()->names() as $name) {
+        foreach (Pinroll::hosts()->names() as $name) {
             $results[] = $this->check($name);
         }
 
@@ -34,10 +34,11 @@ final class TargetChecker
      */
     public function check(string $targetName, ?string $via = null): array
     {
-        $target = Pinroll::targets()->resolve($targetName, $via);
+        $target = Pinroll::hosts()->resolve($targetName, $via);
         $transport = (string) $target['transport'];
 
         $result = [
+            'host' => $targetName,
             'target' => $targetName,
             'transport' => $transport,
             'bundle' => (string) ($target['bundle'] ?? ''),
@@ -60,7 +61,7 @@ final class TargetChecker
 
             if ($failed === []) {
                 $result['ok'] = true;
-                $result['message'] = 'Target is reachable and ready.';
+                $result['message'] = 'Host is reachable and ready.';
             } else {
                 $first = reset($failed);
                 $result['message'] = is_array($first) ? (string) ($first['message'] ?? 'Check failed.') : 'Check failed.';

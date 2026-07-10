@@ -15,7 +15,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
     name: 'pinroll:init',
-    description: 'Scaffold pinroll/ config, bundles, and .env key stubs',
+    description: 'Scaffold pinroll/pinroll.config.php and .env key stubs',
 )]
 class PinrollInitCommand extends Terminal
 {
@@ -23,7 +23,7 @@ class PinrollInitCommand extends Terminal
     {
         $this
             ->addArgument('target', InputArgument::OPTIONAL, 'Target name', 'production')
-            ->addOption('force', 'f', InputOption::VALUE_NONE, 'Rewrite config and bundle stubs');
+            ->addOption('force', 'f', InputOption::VALUE_NONE, 'Rewrite pinroll.config.php');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int

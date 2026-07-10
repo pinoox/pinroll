@@ -3,8 +3,10 @@
 namespace Pinoox\Terminal\Pinroll;
 
 use Pinoox\Component\Terminal;
+use Pinoox\Pinroll\Console\DeployAppSelector;
 use Pinoox\Pinroll\Console\DeployRunner;
 use Pinoox\Pinroll\Console\PinrollCli;
+use Pinoox\Pinroll\Console\PinrollInput;
 use Pinoox\Pinroll\Console\PushRuleResolver;
 use Pinoox\Pinroll\Pinroll;
 use Pinoox\Pinroll\Support\NativePathResolver;
@@ -22,7 +24,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
     name: 'pinroll:push',
-    description: 'Build and upload a release (no apply). Use pinroll:deploy to go live.',
+    description: 'Build and upload a release (no install). Use pinroll:deploy to go live.',
     aliases: ['pinroll:prod'],
 )]
 class PinrollPushCommand extends Terminal
@@ -30,14 +32,18 @@ class PinrollPushCommand extends Terminal
     protected function configure(): void
     {
         $this
-            ->addArgument('target', InputArgument::OPTIONAL, 'Target name (prod = production)', 'production')
+            ->addArgument('host', InputArgument::OPTIONAL, 'Host name (omit when default_host is set)')
+            ->addOption('host', null, InputOption::VALUE_REQUIRED, 'Host override')
             ->addOption('via', null, InputOption::VALUE_REQUIRED, 'Transport: ftp, ssh, pinion')
             ->addOption('all', null, InputOption::VALUE_NONE, 'Push app + vendor + theme')
-            ->addOption('app', null, InputOption::VALUE_NONE, 'Push app package(s)')
             ->addOption('vendor', null, InputOption::VALUE_NONE, 'Sync vendor/')
             ->addOption('theme', null, InputOption::VALUE_NONE, 'Sync theme dist/')
-            ->addOption('apply', 'a', InputOption::VALUE_NONE, 'Also apply after push (prefer: pinroll:deploy)')
-            ->addOption('package', null, InputOption::VALUE_REQUIRED, 'Single app package override')
+            ->addOption('app', null, InputOption::VALUE_REQUIRED, 'App package to build and push')
+            ->addOption('apps', null, InputOption::VALUE_REQUIRED, 'Comma-separated app packages')
+            ->addOption('package', null, InputOption::VALUE_REQUIRED, 'Deprecated — use --app')
+            ->addOption('bundle', null, InputOption::VALUE_REQUIRED, 'Optional custom build recipe (pinroll/bundles/ or builtin: platform-full, platform-core)')
+            ->addOption('install', null, InputOption::VALUE_NONE, 'Also install after push (prefer: pinroll:deploy)')
+            ->addOption('apply', 'a', InputOption::VALUE_NONE, 'Deprecated — use --install')
             ->addOption('check', 'c', InputOption::VALUE_NONE, 'Run pinroll:check before pushing');
     }
 
@@ -86,33 +92,28 @@ class PinrollPushCommand extends Terminal
 
         try {
             $root = defined('PINOOX_BASE_PATH') ? PINOOX_BASE_PATH : getcwd();
-            Pinroll::configure([], new NativePathResolver((string) $root));
+            Pinroll::boot(new NativePathResolver((string) $root));
 
-            $targetName = (string) $input->getArgument('target');
+            $hostName = PinrollInput::hostName($input);
             $via = (string) ($input->getOption('via') ?: '');
-            $available = Pinroll::targets()->transports($targetName);
-            $resolved = Pinroll::targets()->resolve($targetName, $via !== '' ? $via : null);
+            $available = Pinroll::hosts()->transports($hostName);
+            $resolved = Pinroll::hosts()->resolve($hostName, $via !== '' ? $via : null);
+            $rawHost = Pinroll::hosts()->raw($hostName);
+            $options = PinrollInput::deployOptions($input, (bool) ($input->getOption('install') || $input->getOption('apply')));
 
-            $options = array_filter([
-                'via' => $via !== '' ? $via : null,
-                'all' => $input->getOption('all') ? true : null,
-                'app' => $input->getOption('app') ? true : null,
-                'vendor' => $input->getOption('vendor') ? true : null,
-                'theme' => $input->getOption('theme') ? true : null,
-                'package' => $input->getOption('package'),
-            ], static fn (mixed $value): bool => $value !== null && $value !== false && $value !== '');
-
-            $shouldApply = (bool) $input->getOption('apply');
-            if ($shouldApply) {
-                $options['apply'] = true;
+            $preview = PushRuleResolver::resolve($resolved, $options);
+            if ($preview['app']) {
+                $apps = DeployAppSelector::resolve($io, $input, $rawHost, $options, (string) $root);
+                $options['apps'] = implode(',', $apps);
             }
 
             $plan = PushRuleResolver::resolve($resolved, $options);
+            $shouldInstall = !empty($options['apply']);
 
-            $this->printHeader($io, $targetName, $resolved['transport'], $available, $plan, $shouldApply);
+            $this->printHeader($io, $hostName, $resolved['transport'], $available, $plan, $shouldInstall);
 
             if ($input->getOption('check')) {
-                $check = (new TargetChecker())->check($targetName, $via !== '' ? $via : null);
+                $check = (new TargetChecker())->check($hostName, $via !== '' ? $via : null);
                 if (!($check['ok'] ?? false)) {
                     PinrollCli::printCheckResult($io, $check);
 
@@ -120,9 +121,7 @@ class PinrollPushCommand extends Terminal
                 }
             }
 
-            $runner = new DeployRunner();
-            $result = $runner->deploy($targetName, $options);
-
+            $result = (new DeployRunner())->deploy($hostName, $options);
             PinrollCli::printPushResult($io, $result);
 
             return Command::SUCCESS;
@@ -141,15 +140,15 @@ class PinrollPushCommand extends Terminal
      */
     private function printHeader(
         SymfonyStyle $io,
-        string $targetName,
+        string $hostName,
         string $transport,
         array $available,
         array $plan,
-        bool $apply = false,
+        bool $install = false,
     ): void {
         $io->writeln('');
         $io->block(
-            'pinroll:push  →  ' . $targetName,
+            'pinroll:push  →  ' . $hostName,
             'INFO',
             'fg=black;bg=cyan',
             ' ',
@@ -157,12 +156,12 @@ class PinrollPushCommand extends Terminal
         );
 
         $io->definitionList(
-            ['Target' => '<info>' . $targetName . '</info>'],
+            ['Host' => '<info>' . $hostName . '</info>'],
             ['Transport' => '<comment>' . $transport . '</comment> <fg=gray>(' . implode(' · ', $available) . ')</>'],
             ['Parts' => '<info>' . implode(', ', $plan['parts']) . '</info>'],
-            ['Apps' => $plan['apps'] !== [] ? '<info>' . implode(', ', $plan['apps']) . '</info>' : '<fg=gray>all in apps/</>'],
-            ['Apply' => $apply
-                ? '<fg=green>yes</> <fg=gray>(-a · prefer pinroll:deploy)</>'
+            ['Apps' => $plan['apps'] !== [] ? '<info>' . implode(', ', $plan['apps']) . '</info>' : '<fg=red>not set</>'],
+            ['Install' => $install
+                ? '<fg=green>yes</> <fg=gray>(prefer pinroll:deploy)</>'
                 : '<fg=gray>no</> <fg=gray>(use pinroll:deploy to go live)</>'],
         );
         $io->newLine();

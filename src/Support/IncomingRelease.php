@@ -63,7 +63,7 @@ final class IncomingRelease
         }
 
         throw new PinrollException(
-            'Release not found: ' . $deployId . '. Use pinroll:apply {target} --list (or --local --list on the host).',
+            'Release not found: ' . $deployId . '. Use pinroll:install --list (or --local --list on the host).',
         );
     }
 

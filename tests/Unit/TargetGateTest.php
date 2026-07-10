@@ -71,7 +71,7 @@ test('target gate setup guide mentions top-level gate', function () {
     expect(implode("\n", $guide))
         ->toContain('pinroll:gate production')
         ->toContain("'gate' => [")
-        ->toContain('pinroll:apply production')
+        ->toContain('pinroll:install production')
         ->toContain('pinroll:deploy production')
         ->toContain('pinoox.com')
         ->not->toContain("'ftp' => [");

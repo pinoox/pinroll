@@ -25,6 +25,48 @@ final class AppBuildPaths
         return rtrim(str_replace('\\', '/', $root), '/') . '/pinx/export/' . $package;
     }
 
+    /**
+     * Export directories that may accumulate .pinx build artifacts.
+     *
+     * @return list<string>
+     */
+    public static function discoverExportDirs(string $root): array
+    {
+        $root = rtrim(str_replace('\\', '/', $root), '/');
+        $dirs = [];
+
+        $appsRoot = $root . '/apps';
+        if (is_dir($appsRoot)) {
+            foreach (scandir($appsRoot) ?: [] as $name) {
+                if ($name === '.' || $name === '..' || !str_starts_with($name, 'com_')) {
+                    continue;
+                }
+
+                $export = $appsRoot . '/' . $name . '/pinx/export';
+                if (is_dir($export)) {
+                    $dirs[] = $export;
+                }
+            }
+        }
+
+        $single = $root . '/pinx/export';
+        if (is_dir($single)) {
+            $dirs[] = $single;
+            foreach (scandir($single) ?: [] as $name) {
+                if ($name === '.' || $name === '..') {
+                    continue;
+                }
+
+                $path = $single . '/' . $name;
+                if (is_dir($path)) {
+                    $dirs[] = $path;
+                }
+            }
+        }
+
+        return array_values(array_unique($dirs));
+    }
+
     public static function nextPinxOutput(string $root, string $package): string
     {
         $exportDir = self::pinxExportDir($root, $package);

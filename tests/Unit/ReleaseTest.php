@@ -17,27 +17,18 @@ test('release manifest roundtrip', function () {
 });
 
 test('single app bundle is inferred from package', function () {
-    expect(ReleaseBundle::inferFromPackage('com_pinoox_developer'))->toBe('single-app');
+    expect(ReleaseBundle::inferFromPackage('com_pinoox_developer'))->toBe('app:com_pinoox_developer');
 });
 
-test('bundle recipe resolves with package placeholder', function () {
+test('bundle recipe resolves with package placeholder from builtin', function () {
     $root = sys_get_temp_dir() . '/pinroll-bundle-' . uniqid('', true);
-    mkdir($root . '/pinroll/bundles', 0755, true);
-    file_put_contents(
-        $root . '/pinroll/bundles/single-app.php',
-        <<<'PHP'
-<?php return [
-    'name' => 'single-app',
-    'scope' => 'app',
-    'build' => [['type' => 'app', 'package' => '{{package}}', 'command' => 'pinx:build {{package}}']],
-];
-PHP
-    );
+    mkdir($root . '/apps/com_demo_app', 0755, true);
+    file_put_contents($root . '/apps/com_demo_app/app.php', "<?php\nreturn ['package' => 'com_demo_app', 'enable' => true];\n");
 
     $paths = new NativePathResolver($root);
     $config = new Config($paths, []);
-    $bundle = ReleaseBundle::resolve($config, $paths, 'single-app', 'com_demo_app');
+    $bundle = ReleaseBundle::resolveAuto($config, $paths, 'com_demo_app');
 
-    expect($bundle->name())->toBe('single-app');
+    expect($bundle->name())->toBe('app:com_demo_app');
     expect($bundle->buildSteps()[0]['package'] ?? null)->toBe('com_demo_app');
 });

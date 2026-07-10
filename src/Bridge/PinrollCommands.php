@@ -14,6 +14,7 @@ final class PinrollCommands
         return [
             \Pinoox\Terminal\Pinroll\PinrollInitCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollConnectCommand::class,
+            \Pinoox\Terminal\Pinroll\PinrollAppsCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollCheckCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollPushCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollDeployCommand::class,
@@ -25,9 +26,10 @@ final class PinrollCommands
             \Pinoox\Terminal\Pinroll\PinrollHistoryCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollRollbackCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollCleanupCommand::class,
-            \Pinoox\Terminal\Pinroll\PinrollApplyCommand::class,
+            \Pinoox\Terminal\Pinroll\PinrollInstallCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollPublishCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollPullCommand::class,
+            \Pinoox\Terminal\Pinroll\PinrollMigrateConfigCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollMigrateDryRunCommand::class,
         ];
     }

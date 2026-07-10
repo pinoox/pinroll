@@ -17,18 +17,27 @@ final class ConfigWriter
     }
 
     /**
-     * @param array<string, array<string, mixed>> $targets
+     * @param array<string, array<string, mixed>> $hosts
+     * @param array<string, mixed> $globals
      */
-    public static function write(string $path, array $targets): void
+    public static function writeHosts(string $path, array $hosts, array $globals = []): void
     {
         $dir = dirname($path);
         if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
             throw new PinrollException('Unable to create pinroll directory: ' . $dir);
         }
 
-        if (file_put_contents($path, ConfigTemplate::render($targets)) === false) {
+        if (file_put_contents($path, ConfigTemplate::renderHosts($hosts, $globals)) === false) {
             throw new PinrollException('Unable to write pinroll config: ' . $path);
         }
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $targets
+     */
+    public static function write(string $path, array $targets): void
+    {
+        self::writeHosts($path, $targets, SampleConfig::globalDefaults());
     }
 
     /**
@@ -180,6 +189,99 @@ final class ConfigWriter
     public static function isEnvField(string $field): bool
     {
         return in_array($field, ['gate_url', 'url', 'token', 'public_key', 'host', 'user', 'key', 'password'], true);
+    }
+
+    /**
+     * @param list<string>|null $apps null clears apps (commented placeholder); non-empty list sets apps[]
+     */
+    public static function setHostApps(string $path, string $hostName, ?array $apps): void
+    {
+        if (!is_file($path)) {
+            throw new PinrollException('Pinroll config not found: ' . $path);
+        }
+
+        $lines = file($path, FILE_IGNORE_NEW_LINES);
+        if ($lines === false) {
+            throw new PinrollException('Unable to read pinroll config: ' . $path);
+        }
+
+        $replacement = self::hostAppsLines($apps);
+        $inHost = false;
+        $hostFound = false;
+        $appsStart = null;
+        $appsEnd = null;
+        $viaIndex = null;
+        $hostPattern = "/^\s+" . preg_quote(var_export($hostName, true), '/') . "\s*=>/";
+        $appsPattern = '/^\s+(\/\/ Default app packages|\'apps\'\s*=>|\/\/\s+\'apps\'\s*=>)/';
+
+        foreach ($lines as $index => $line) {
+            if (preg_match($hostPattern, $line)) {
+                $inHost = true;
+                $hostFound = true;
+                continue;
+            }
+
+            if ($inHost && preg_match('/^\s+\],/', $line)) {
+                break;
+            }
+
+            if (!$inHost) {
+                continue;
+            }
+
+            if (preg_match("/^\s+'via'\s*=>/", $line)) {
+                $viaIndex = $index;
+            }
+
+            if (preg_match($appsPattern, $line)) {
+                if ($appsStart === null) {
+                    $appsStart = $index;
+                }
+                $appsEnd = $index;
+            }
+        }
+
+        if (!$hostFound) {
+            throw new PinrollException("Host \"{$hostName}\" not found in pinroll.config.php.");
+        }
+
+        if ($appsStart !== null && $appsEnd !== null) {
+            array_splice($lines, $appsStart, $appsEnd - $appsStart + 1, $replacement);
+        } elseif ($viaIndex !== null) {
+            $insertAt = $viaIndex + 1;
+            if (isset($lines[$insertAt]) && trim($lines[$insertAt]) === '') {
+                $insertAt++;
+            }
+
+            array_splice($lines, $insertAt, 0, array_merge([''], $replacement, ['']));
+        } else {
+            throw new PinrollException("Host \"{$hostName}\" has no via key — cannot insert apps.");
+        }
+
+        if (file_put_contents($path, implode("\n", $lines) . "\n") === false) {
+            throw new PinrollException('Unable to write pinroll config: ' . $path);
+        }
+    }
+
+    /**
+     * @param list<string>|null $apps
+     * @return list<string>
+     */
+    private static function hostAppsLines(?array $apps): array
+    {
+        if ($apps === null || $apps === []) {
+            return [
+                '            // Default app packages for push/install (pinroll:apps — or pinroll:push will prompt)',
+                "            // 'apps' => ['com_pinoox_account'],",
+            ];
+        }
+
+        $exported = implode(', ', array_map(static fn (string $app): string => var_export($app, true), $apps));
+
+        return [
+            '            // Default app packages for push/install on this host',
+            "            'apps' => [{$exported}],",
+        ];
     }
 
     public static function setTargetDir(string $path, string $targetName, string $dir): void

@@ -12,6 +12,9 @@ return [
     'lock_timeout' => 3600,
     'gate_path' => '_pinoox/gate',
     'default_transport' => 'pinion',
-    'default_bundle' => 'single-app',
     'chunk_size' => 5 * 1024 * 1024,
+    'default_host' => 'production',
+    'keep' => 3,
+    'store' => 'remote',
+    'auto_clean' => true,
 ];

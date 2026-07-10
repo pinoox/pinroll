@@ -2,21 +2,19 @@
 
 namespace Pinoox\Pinroll\Console;
 
+use Pinoox\Pinroll\Pinroll;
 use Pinoox\Pinroll\Support\HostDir;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 final class PinrollCli
 {
-    /**
-     * @param array<string, mixed> $result
-     */
-    public static function printApplyResult(SymfonyStyle $io, array $result): void
+    public static function printInstallResult(SymfonyStyle $io, array $result): void
     {
         $deployId = (string) ($result['deploy_id'] ?? $result['id'] ?? '');
         $installable = (string) ($result['installable'] ?? '');
 
         $io->newLine();
-        $io->block('Apply completed', 'OK', 'fg=black;bg=green', ' ', true);
+        $io->block('Install completed', 'OK', 'fg=black;bg=green', ' ', true);
 
         if ($deployId !== '') {
             $io->writeln('  <fg=gray>Deploy</>  <info>' . self::escape($deployId) . '</info>');
@@ -56,6 +54,15 @@ final class PinrollCli
     }
 
     /**
+     * @param array<string, mixed> $result
+     * @deprecated Use printInstallResult()
+     */
+    public static function printApplyResult(SymfonyStyle $io, array $result): void
+    {
+        self::printInstallResult($io, $result);
+    }
+
+    /**
      * @param array{
      *     target?: string,
      *     zip?: string|null,
@@ -72,7 +79,7 @@ final class PinrollCli
      */
     public static function printGateInitResult(SymfonyStyle $io, array $data): void
     {
-        $target = (string) ($data['target'] ?? 'production');
+        $target = (string) ($data['host'] ?? $data['target'] ?? 'production');
         $token = (string) ($data['token'] ?? '');
         $gateUrl = (string) ($data['gate_url'] ?? '');
         $isExample = (bool) ($data['gate_url_is_example'] ?? ($gateUrl === ''));
@@ -148,8 +155,8 @@ final class PinrollCli
         }
 
         $io->newLine();
-        $io->writeln('  <fg=gray>Next:</> <comment>php pinoox pinroll:deploy ' . $target . '</comment>');
-        $io->writeln('  <fg=gray>or push only:</> <comment>php pinoox pinroll:push ' . $target . '</comment>');
+        $io->writeln('  <fg=gray>Next:</> <comment>php pinoox pinroll:deploy' . self::hostCliSuffix($target) . '</comment>');
+        $io->writeln('  <fg=gray>or push only:</> <comment>php pinoox pinroll:push' . self::hostCliSuffix($target) . '</comment>');
     }
 
     /**
@@ -162,7 +169,7 @@ final class PinrollCli
      */
     public static function printInitSummary(SymfonyStyle $io, array $data): void
     {
-        $target = (string) ($data['target'] ?? 'production');
+        $target = (string) ($data['host'] ?? $data['target'] ?? 'production');
 
         $io->success('Pinroll initialized');
 
@@ -182,9 +189,60 @@ final class PinrollCli
             '       <comment>php pinoox pinroll:connect</comment>',
             '',
             '  <fg=yellow>3.</> Go live:',
-            '       <comment>php pinoox pinroll:deploy ' . $target . '</comment>',
-            '       <fg=gray>or upload only:</> <comment>php pinoox pinroll:push ' . $target . '</comment>',
+            '       <comment>php pinoox pinroll:deploy' . self::hostCliSuffix($target) . '</comment>',
+            '       <fg=gray>or upload only:</> <comment>php pinoox pinroll:push' . self::hostCliSuffix($target) . '</comment>',
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public static function printConnectStatus(SymfonyStyle $io, array $data): void
+    {
+        $check = is_array($data['check'] ?? null) ? $data['check'] : [];
+        $ok = (bool) ($check['ok'] ?? false);
+        $hostName = (string) ($data['host'] ?? $data['target'] ?? '');
+
+        $io->newLine();
+        $io->block(
+            $ok ? 'Host connected' : 'Connection check failed',
+            $ok ? 'OK' : 'FAIL',
+            $ok ? 'fg=black;bg=green' : 'fg=white;bg=red',
+            ' ',
+            true,
+        );
+
+        foreach ($check['checks'] ?? [] as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $label = (string) ($item['label'] ?? 'check');
+            $message = (string) ($item['message'] ?? '');
+            $itemOk = (bool) ($item['ok'] ?? false);
+            $icon = $itemOk ? '<fg=green;options=bold>✓</>' : '<fg=red;options=bold>✗</>';
+
+            $io->writeln('  ' . $icon . ' <info>' . self::escape($label) . '</>'
+                . ($message !== '' ? '  ' . self::escape($message) : ''));
+        }
+
+        if (($check['message'] ?? '') !== '' && ($check['checks'] ?? []) === []) {
+            $io->writeln('  ' . self::escape((string) $check['message']));
+        }
+
+        $hostArg = self::hostCliSuffix($hostName);
+        $io->newLine();
+
+        if ($ok) {
+            $io->writeln('  Go live (push + install):');
+            $io->writeln('  <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>');
+            $io->writeln(
+                '  <fg=gray>or</> <comment>php pinoox pinroll:push' . $hostArg . '</comment>'
+                . ' then <comment>php pinoox pinroll:install' . $hostArg . '</comment>',
+            );
+        } else {
+            $io->writeln('  <fg=gray>Fix credentials in .env or run</> <comment>php pinoox pinroll:connect --reset</comment>');
+        }
     }
 
     /**
@@ -192,7 +250,7 @@ final class PinrollCli
      */
     public static function printConnectResult(SymfonyStyle $io, array $data): void
     {
-        $target = (string) ($data['target'] ?? 'production');
+        $target = (string) ($data['host'] ?? $data['target'] ?? 'production');
         $uploaded = (bool) ($data['uploaded'] ?? false);
         $gateUrl = (string) ($data['gate_url'] ?? '');
 
@@ -213,10 +271,15 @@ final class PinrollCli
             $io->writeln('  <fg=green>Uploaded</> pingate.php + gate/ via FTP');
         }
 
+        $hostArg = self::hostCliSuffix($target);
+
         $io->newLine();
-        $io->writeln('  Go live (push + apply):');
-        $io->writeln('  <comment>php pinoox pinroll:deploy ' . $target . '</comment>');
-        $io->writeln('  <fg=gray>or</> <comment>php pinoox pinroll:push ' . $target . '</comment> then <comment>php pinoox pinroll:apply ' . $target . '</comment>');
+        $io->writeln('  Go live (push + install):');
+        $io->writeln('  <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>');
+        $io->writeln(
+            '  <fg=gray>or</> <comment>php pinoox pinroll:push' . $hostArg . '</comment>'
+            . ' then <comment>php pinoox pinroll:install' . $hostArg . '</comment>',
+        );
     }
 
     /**
@@ -224,12 +287,11 @@ final class PinrollCli
      */
     public static function printPushResult(SymfonyStyle $io, array $result): void
     {
-        $status = (string) ($result['status'] ?? 'ok');
         $deployId = (string) ($result['deploy_id'] ?? $result['id'] ?? '');
 
         $io->newLine();
         $io->block(
-            'Push finished — ' . $status,
+            'Push complete',
             'OK',
             'fg=black;bg=green',
             ' ',
@@ -260,19 +322,23 @@ final class PinrollCli
                 . ($message !== '' ? ' <fg=gray>—</> <comment>' . self::escape($message) . '</>' : ''));
         }
 
-        if ($deployId !== '' && self::hasUploadStep($result) && !self::hasApplyStep($result)) {
+        if ($deployId !== '' && self::hasUploadStep($result) && !self::hasInstallStep($result)) {
+            $hostName = self::resolveHostName($result);
+            $hostArg = self::hostCliSuffix($hostName);
+            $deployPath = self::deployPathHint($hostName);
+
             $io->newLine();
-            $io->section('Install on server');
+            $io->section('Next: install on host');
             $io->writeln([
-                '<fg=gray>Go live in one step:</>',
-                '  <fg=yellow>php pinoox pinroll:deploy production</>',
+                '<fg=gray>Go live (push + install):</>',
+                '  <fg=yellow>php pinoox pinroll:deploy' . $hostArg . '</>',
                 '',
-                '<fg=gray>Or apply the upload you just pushed:</>',
-                '  <fg=yellow>php pinoox pinroll:apply production</>',
+                '<fg=gray>Or install the upload you just pushed:</>',
+                '  <fg=yellow>php pinoox pinroll:install' . $hostArg . '</>',
                 '',
                 '<fg=gray>SSH shell on host:</>',
-                '  <fg=yellow>cd</> <comment>~/public_html</comment>  <fg=gray>(site root)</>',
-                '  <fg=yellow>php pinoox pinroll:apply --local</>',
+                '  <fg=yellow>cd</> <comment>' . self::escape($deployPath) . '</comment>  <fg=gray>(site root)</>',
+                '  <fg=yellow>php pinoox pinroll:install --local</>',
             ]);
         }
     }
@@ -280,7 +346,7 @@ final class PinrollCli
     /**
      * @param array<string, mixed> $result
      */
-    private static function hasApplyStep(array $result): bool
+    private static function hasInstallStep(array $result): bool
     {
         foreach ($result['steps'] ?? [] as $step) {
             if (!is_array($step)) {
@@ -290,7 +356,7 @@ final class PinrollCli
             $name = (string) ($step['step'] ?? $step['name'] ?? '');
             $status = (string) ($step['status'] ?? '');
 
-            if ($name === 'apply' && $status === 'ok') {
+            if (($name === 'install' || $name === 'apply') && $status === 'ok') {
                 return true;
             }
         }
@@ -317,6 +383,50 @@ final class PinrollCli
         }
 
         return false;
+    }
+
+    /**
+     * @param array<string, mixed> $result
+     */
+    private static function resolveHostName(array $result): string
+    {
+        return (string) ($result['host'] ?? $result['target'] ?? '');
+    }
+
+    private static function hostCliSuffix(string $hostName): string
+    {
+        if ($hostName === '') {
+            return '';
+        }
+
+        try {
+            $default = (string) (Pinroll::config()->get('default_host', '') ?? '');
+            if ($default !== '' && $hostName === $default) {
+                return '';
+            }
+        } catch (\Throwable) {
+            // Pinroll not booted — include host name in examples.
+        }
+
+        return ' ' . $hostName;
+    }
+
+    private static function deployPathHint(string $hostName): string
+    {
+        if ($hostName === '') {
+            return '~/public_html';
+        }
+
+        try {
+            $raw = Pinroll::hosts()->raw($hostName);
+            $path = (string) ($raw['deploy_path'] ?? '');
+            if ($path !== '') {
+                return $path;
+            }
+        } catch (\Throwable) {
+        }
+
+        return '~/public_html';
     }
 
     private static function escape(string $value): string

@@ -7,22 +7,31 @@ final class SampleConfig
     /**
      * @return array<string, array<string, mixed>>
      */
-    public static function targets(?string $stagingPackage = null): array
+    public static function hosts(?string $stagingPackage = null): array
     {
         unset($stagingPackage);
 
         return [
-            'production' => self::productionTarget('production'),
+            'production' => self::productionHost('production'),
         ];
+    }
+
+    /**
+     * @deprecated Use hosts()
+     * @return array<string, array<string, mixed>>
+     */
+    public static function targets(?string $stagingPackage = null): array
+    {
+        return self::hosts($stagingPackage);
     }
 
     /**
      * @return array<string, mixed>
      */
-    public static function productionTarget(string $name = 'production'): array
+    public static function productionHost(string $name = 'production'): array
     {
         return [
-            'dir' => 'public_html',
+            'deploy_path' => 'public_html',
             'via' => 'ftp',
             'gate' => self::gateBlock($name),
             'ftp' => [
@@ -31,6 +40,14 @@ final class SampleConfig
                 'password' => ['_env' => ConfigWriter::envKeyFor($name, 'password', 'ftp'), 'default' => ''],
             ],
         ];
+    }
+
+    /**
+     * @deprecated Use productionHost()
+     */
+    public static function productionTarget(string $name = 'production'): array
+    {
+        return self::productionHost($name);
     }
 
     /**
@@ -46,7 +63,6 @@ final class SampleConfig
 
     /**
      * @deprecated Use gateBlock()
-     * @return array<string, mixed>
      */
     public static function pinionBlock(string $name, string $gateUrl = ''): array
     {
@@ -62,6 +78,19 @@ final class SampleConfig
             'host' => ['_env' => ConfigWriter::envKeyFor($name, 'host', 'ssh'), 'default' => ''],
             'user' => ['_env' => ConfigWriter::envKeyFor($name, 'user', 'ssh'), 'default' => ''],
             'key' => ['_env' => ConfigWriter::envKeyFor($name, 'key', 'ssh'), 'default' => ''],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function globalDefaults(): array
+    {
+        return [
+            'default_host' => 'production',
+            'keep' => 3,
+            'store' => 'remote',
+            'auto_clean' => true,
         ];
     }
 }

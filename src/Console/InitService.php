@@ -46,7 +46,7 @@ final class InitService
 
         // Ensure production-style target with env-backed ftp + gate
         if ($force || !is_file($configFile)) {
-            ConfigWriter::write($configFile, SampleConfig::targets());
+            ConfigWriter::writeHosts($configFile, SampleConfig::hosts(), SampleConfig::globalDefaults());
             if (!in_array($configFile, $created, true)) {
                 $created[] = $configFile;
             }
