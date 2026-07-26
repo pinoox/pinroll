@@ -105,6 +105,29 @@ final class PinGateClient
     }
 
     /**
+     * Extract a previously uploaded vendor.zip on the host (POST /vendor).
+     *
+     * @param array{zip?: string, delete_zip?: bool} $options
+     * @return array<string, mixed>
+     */
+    public static function extractVendor(string $gateUrlBase, string $token, array $options = []): array
+    {
+        $url = rtrim($gateUrlBase, '/') . '/vendor';
+        $response = self::request('POST', $url, $token, $options);
+
+        if (!($response['success'] ?? false)) {
+            throw new PinrollException((string) ($response['error'] ?? 'PinGate vendor extract failed.'));
+        }
+
+        $data = $response['data'] ?? [];
+        if (!is_array($data)) {
+            throw new PinrollException('PinGate vendor extract returned invalid response.');
+        }
+
+        return $data;
+    }
+
+    /**
      * @param array<string, mixed> $options
      * @return array<string, mixed>
      */
