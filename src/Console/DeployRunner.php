@@ -79,7 +79,6 @@ final class DeployRunner
                 );
                 $profile = [
                     'vendor' => $plan['vendor'],
-                    'build' => 'pinx:build ' . $package . ' --yes --no-ansi',
                 ];
                 $result = Pinroll::builder()->build($bundle, $package, $profile);
                 PushSteps::done(basename((string) $result['archive']));
@@ -126,11 +125,16 @@ final class DeployRunner
 
         if ($shouldApply && $plan['app'] && $builds !== []) {
             $applier = new ReleaseApplier();
+            $lastIndex = array_key_last($builds);
 
-            foreach ($builds as $result) {
+            foreach ($builds as $index => $result) {
                 $deployId = $result['manifest']->deployId();
                 PushSteps::start('Install ' . $deployId . ' via PinGate');
-                $applier->applyOnTarget($target, $rawHost, $deployId, $session);
+                // Defer retention cleanup until the last install so sibling staged
+                // releases from this deploy are not pruned mid-batch (keep=N).
+                $applier->applyOnTarget($target, $rawHost, $deployId, $session, [
+                    'auto_clean' => $index === $lastIndex,
+                ]);
                 PushSteps::done();
             }
         }
