@@ -15,12 +15,14 @@ final class ReleaseApplier
     /**
      * @param array<string, mixed> $resolvedTarget
      * @param array<string, mixed> $rawTarget
+     * @param array{auto_clean?: bool} $options
      */
     public function applyOnTarget(
         array $resolvedTarget,
         array $rawTarget,
         string $deployId,
         RolloutSession $session,
+        array $options = [],
     ): void {
         $transport = (string) ($resolvedTarget['transport'] ?? '');
 
@@ -35,7 +37,7 @@ final class ReleaseApplier
         $token = $gate['token'] !== '' ? $gate['token'] : (string) ($resolvedTarget['token'] ?? '');
 
         if ($gateUrl !== '' && $token !== '') {
-            $this->applyViaPinGate($gateUrl, $token, $deployId, $session, $resolvedTarget, $rawTarget);
+            $this->applyViaPinGate($gateUrl, $token, $deployId, $session, $resolvedTarget, $rawTarget, $options);
 
             return;
         }
@@ -80,6 +82,11 @@ final class ReleaseApplier
         $session->addStep('apply', 'ok', 'Applied on host: ' . $deployId);
     }
 
+    /**
+     * @param array<string, mixed> $resolvedTarget
+     * @param array<string, mixed> $rawTarget
+     * @param array{auto_clean?: bool} $options
+     */
     private function applyViaPinGate(
         string $gateUrl,
         string $token,
@@ -87,8 +94,13 @@ final class ReleaseApplier
         RolloutSession $session,
         array $resolvedTarget,
         array $rawTarget,
+        array $options = [],
     ): void {
         $host = array_merge($rawTarget, $resolvedTarget);
+        if (array_key_exists('auto_clean', $options)) {
+            $host['auto_clean'] = (bool) $options['auto_clean'];
+        }
+
         $retention = RetentionPolicy::settings($host);
         $label = $deployId !== '' ? $deployId : 'latest';
         PushProgress::arrow('PinGate install: ' . $label);

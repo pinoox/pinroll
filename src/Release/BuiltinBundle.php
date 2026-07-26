@@ -35,6 +35,11 @@ final class BuiltinBundle
             'scope' => 'app',
             'build' => [
                 [
+                    'type' => 'frontend',
+                    'package' => $package,
+                    'command' => 'fe:build {{package}} --no-ansi',
+                ],
+                [
                     'type' => 'app',
                     'package' => $package,
                     'command' => 'pinx:build {{package}} --yes --no-ansi',
@@ -52,6 +57,11 @@ final class BuiltinBundle
     {
         $build = [];
         foreach ($packages as $package) {
+            $build[] = [
+                'type' => 'frontend',
+                'package' => $package,
+                'command' => 'fe:build ' . $package . ' --no-ansi',
+            ];
             $build[] = [
                 'type' => 'app',
                 'package' => $package,
