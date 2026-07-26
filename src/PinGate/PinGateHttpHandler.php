@@ -11,6 +11,7 @@ use Pinoox\Pinroll\Rollout\RolloutEngine;
 use Pinoox\Pinroll\Rollout\RolloutSession;
 use Pinoox\Pinroll\Support\Config;
 use Pinoox\Pinroll\Support\IncomingRelease;
+use Pinoox\Pinroll\Support\StorageCleaner;
 use Pinoox\Pinroll\Host\HookRunner;
 use Pinoox\Pinroll\Host\RetentionPolicy;
 use Pinoox\Pinion\HttpHandler;
