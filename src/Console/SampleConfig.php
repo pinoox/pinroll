@@ -7,12 +7,12 @@ final class SampleConfig
     /**
      * @return array<string, array<string, mixed>>
      */
-    public static function hosts(?string $stagingPackage = null): array
+    public static function hosts(string $name = 'production'): array
     {
-        unset($stagingPackage);
+        $name = trim($name) !== '' ? trim($name) : 'production';
 
         return [
-            'production' => self::productionHost('production'),
+            $name => self::productionHost($name),
         ];
     }
 
@@ -20,9 +20,11 @@ final class SampleConfig
      * @deprecated Use hosts()
      * @return array<string, array<string, mixed>>
      */
-    public static function targets(?string $stagingPackage = null): array
+    public static function targets(?string $stagingPackage = null, string $name = 'production'): array
     {
-        return self::hosts($stagingPackage);
+        unset($stagingPackage);
+
+        return self::hosts($name);
     }
 
     /**
@@ -84,10 +86,12 @@ final class SampleConfig
     /**
      * @return array<string, mixed>
      */
-    public static function globalDefaults(): array
+    public static function globalDefaults(string $defaultHost = 'production'): array
     {
+        $defaultHost = trim($defaultHost) !== '' ? trim($defaultHost) : 'production';
+
         return [
-            'default_host' => 'production',
+            'default_host' => $defaultHost,
             'keep' => 3,
             'store' => 'remote',
             'auto_clean' => true,

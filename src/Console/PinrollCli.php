@@ -177,20 +177,25 @@ final class PinrollCli
             $io->writeln('  <fg=green>config</>  ' . self::relPath($data['config']));
         }
 
+        $hostArg = self::hostCliSuffix($target);
+        $hostKey = ConfigWriter::envKeyFor($target, 'host', 'ftp');
+        $userKey = ConfigWriter::envKeyFor($target, 'user', 'ftp');
+        $passKey = ConfigWriter::envKeyFor($target, 'password', 'ftp');
+
         $io->newLine();
         $io->section('Next steps');
         $io->writeln([
             '  <fg=yellow>1.</> Set FTP credentials in <comment>.env</comment>:',
-            '       PINROLL_' . strtoupper(preg_replace('/[^a-zA-Z0-9]+/', '_', $target) ?: 'PRODUCTION') . '_HOST=',
-            '       PINROLL_' . strtoupper(preg_replace('/[^a-zA-Z0-9]+/', '_', $target) ?: 'PRODUCTION') . '_USER=',
-            '       PINROLL_' . strtoupper(preg_replace('/[^a-zA-Z0-9]+/', '_', $target) ?: 'PRODUCTION') . '_PASSWORD=',
+            '       ' . $hostKey . '=',
+            '       ' . $userKey . '=',
+            '       ' . $passKey . '=',
             '',
             '  <fg=yellow>2.</> Connect & upload PinGate:',
-            '       <comment>php pinoox pinroll:connect</comment>',
+            '       <comment>php pinoox pinroll:connect' . $hostArg . '</comment>',
             '',
             '  <fg=yellow>3.</> Go live:',
-            '       <comment>php pinoox pinroll:deploy' . self::hostCliSuffix($target) . '</comment>',
-            '       <fg=gray>or upload only:</> <comment>php pinoox pinroll:push' . self::hostCliSuffix($target) . '</comment>',
+            '       <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>',
+            '       <fg=gray>or upload only:</> <comment>php pinoox pinroll:push' . $hostArg . '</comment>',
         ]);
     }
 
