@@ -4,7 +4,6 @@ namespace Pinoox\Pinroll\Console;
 
 use Pinoox\Pinroll\Exception\PinrollException;
 use Pinoox\Pinroll\Pinroll;
-use Pinoox\Pinroll\Support\ConfigFileLoader;
 use Pinoox\Pinroll\Support\NativePathResolver;
 use Pinoox\Pinroll\Support\PinrollAutoloader;
 use Pinoox\Pinroll\Support\ProjectPaths;
@@ -140,94 +139,17 @@ final class InitService
      */
     private static function ensureHostInConfig(string $configFile, string $hostName): bool
     {
-        $loaded = ConfigFileLoader::load($configFile);
-        /** @var array<string, array<string, mixed>> $hosts */
-        $hosts = is_array($loaded['hosts'] ?? null) ? $loaded['hosts'] : [];
-        if ($hosts === [] && is_array($loaded['targets'] ?? null)) {
-            $hosts = $loaded['targets'];
-        }
-
-        if (isset($hosts[$hostName]) && is_array($hosts[$hostName])) {
+        $before = (string) file_get_contents($configFile);
+        $hostPattern = '/^\s+' . preg_quote(var_export($hostName, true), '/') . '\s*=>/m';
+        if (preg_match($hostPattern, $before)) {
             return false;
         }
 
-        $hosts[$hostName] = SampleConfig::productionHost($hostName);
+        ConfigWriter::addHost($configFile, $hostName);
 
-        $globals = [
-            'default_host' => (string) ($loaded['default_host'] ?? $hostName),
-            'keep' => (int) ($loaded['keep'] ?? 3),
-            'store' => (string) ($loaded['store'] ?? 'remote'),
-            'auto_clean' => (bool) ($loaded['auto_clean'] ?? true),
-        ];
+        $after = (string) file_get_contents($configFile);
 
-        foreach ($hosts as $name => $host) {
-            if (!is_string($name) || !is_array($host)) {
-                continue;
-            }
-            // Re-wrap evaluated plain strings into env-backed fields for known keys.
-            $hosts[$name] = self::normalizeLoadedHost((string) $name, $host);
-        }
-
-        ConfigWriter::writeHosts($configFile, $hosts, $globals);
-
-        return true;
-    }
-
-    /**
-     * @param array<string, mixed> $host
-     * @return array<string, mixed>
-     */
-    private static function normalizeLoadedHost(string $name, array $host): array
-    {
-        $via = (string) ($host['via'] ?? 'ftp');
-        $normalized = [
-            'deploy_path' => (string) ($host['deploy_path'] ?? $host['dir'] ?? 'public_html'),
-            'via' => $via !== '' ? $via : 'ftp',
-        ];
-
-        if (array_key_exists('web_path', $host)) {
-            $normalized['web_path'] = (string) $host['web_path'];
-        }
-
-        if (!empty($host['apps']) && is_array($host['apps'])) {
-            $normalized['apps'] = array_values(array_filter(array_map('strval', $host['apps'])));
-        }
-
-        $gate = is_array($host['gate'] ?? null) ? $host['gate'] : null;
-        if ($gate !== null) {
-            $normalized['gate'] = [
-                'url' => [
-                    '_env' => ConfigWriter::envKeyFor($name, 'url', 'pinion'),
-                    'default' => (string) ($gate['url'] ?? ''),
-                ],
-                'token' => [
-                    '_env' => ConfigWriter::envKeyFor($name, 'token', 'pinion'),
-                    'default' => (string) ($gate['token'] ?? ''),
-                ],
-            ];
-        } else {
-            $normalized['gate'] = SampleConfig::gateBlock($name);
-        }
-
-        if (is_array($host['ftp'] ?? null) || $normalized['via'] === 'ftp') {
-            $ftp = is_array($host['ftp'] ?? null) ? $host['ftp'] : [];
-            $normalized['ftp'] = [
-                'host' => [
-                    '_env' => ConfigWriter::envKeyFor($name, 'host', 'ftp'),
-                    'default' => (string) ($ftp['host'] ?? ''),
-                ],
-                'user' => [
-                    '_env' => ConfigWriter::envKeyFor($name, 'user', 'ftp'),
-                    'default' => (string) ($ftp['user'] ?? ''),
-                ],
-                'password' => [
-                    '_env' => ConfigWriter::envKeyFor($name, 'password', 'ftp'),
-                    'default' => (string) ($ftp['password'] ?? ''),
-                ],
-            ];
-        }
-
-        return $normalized;
+        return $after !== $before;
     }
 
     private static function envKeyExists(string $path, string $key): bool

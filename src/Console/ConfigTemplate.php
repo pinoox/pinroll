@@ -61,6 +61,14 @@ PHP;
 
     /**
      * @param array<string, mixed> $host
+     */
+    public static function renderHostBlock(string $name, array $host): string
+    {
+        return implode("\n", self::renderHost($name, $host)) . "\n";
+    }
+
+    /**
+     * @param array<string, mixed> $host
      * @return list<string>
      */
     private static function renderHost(string $name, array $host): array

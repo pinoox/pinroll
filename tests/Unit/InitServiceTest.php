@@ -44,3 +44,52 @@ test('init rejects invalid host names', function () {
 
     @rmdir($root);
 });
+
+test('init adds named host into existing config without rewriting others', function () {
+    $root = sys_get_temp_dir() . '/pinroll-init-merge-' . uniqid('', true);
+    mkdir($root . '/pinroll', 0755, true);
+    file_put_contents($root . '/.env', "APP_KEY=test\n");
+    file_put_contents($root . '/pinroll/pinroll.config.php', <<<'PHP'
+<?php
+
+return [
+    'default_host' => 'poy',
+    'keep' => 3,
+    'store' => 'remote',
+    'auto_clean' => true,
+    'hosts' => [
+        'poy' => [
+            'deploy_path' => 'apps',
+            'via' => 'ftp',
+            'gate' => [
+                'url' => env('PINROLL_POY_URL', ''),
+                'token' => env('PINROLL_POY_TOKEN', ''),
+            ],
+            'ftp' => [
+                'host' => env('PINROLL_POY_HOST', ''),
+                'user' => env('PINROLL_POY_USER', ''),
+                'password' => env('PINROLL_POY_PASSWORD', ''),
+            ],
+        ],
+    ],
+];
+PHP);
+
+    $result = (new InitService($root))->run('poy2');
+
+    $config = file_get_contents($result['config']);
+    expect($config)->toContain("'poy' => [")
+        ->and($config)->toContain("'poy2' => [")
+        ->and($config)->toContain("env('PINROLL_POY_HOST'")
+        ->and($config)->toContain("env('PINROLL_POY2_HOST'")
+        ->and($config)->toContain("'default_host' => 'poy'");
+
+    $env = file_get_contents($root . '/.env');
+    expect($env)->toContain('PINROLL_POY2_HOST=');
+
+    @unlink($result['config']);
+    @rmdir($root . '/pinroll');
+    @unlink($root . '/.env');
+    @rmdir($root);
+});
+
