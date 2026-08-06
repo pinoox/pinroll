@@ -2,6 +2,8 @@
 
 namespace Pinoox\Pinroll\Console;
 
+use Pinoox\Pinroll\Support\HostDir;
+
 final class ConfigTemplate
 {
     private const HEADER = <<<'PHP'
@@ -69,9 +71,14 @@ PHP;
         $lines = [
             '        ' . var_export($name, true) . ' => [',
             "            'deploy_path' => {$deployPath},",
-            "            'via' => " . var_export($via, true) . ',',
-            '',
         ];
+
+        if (array_key_exists('web_path', $host)) {
+            $lines[] = "            'web_path' => " . var_export(HostDir::normalize((string) $host['web_path']), true) . ',';
+        }
+
+        $lines[] = "            'via' => " . var_export($via, true) . ',';
+        $lines[] = '';
 
         $lines = array_merge($lines, self::renderApps($host));
         $lines[] = '';

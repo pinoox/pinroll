@@ -7,7 +7,6 @@ use Pinoox\Pinroll\Pinroll;
 use Pinoox\Pinroll\Support\HostDir;
 use Pinoox\Pinroll\Support\NativePathResolver;
 use Pinoox\Pinroll\Support\ProjectPaths;
-use Pinoox\Pinroll\Target\TargetGate;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
@@ -42,11 +41,11 @@ final class TargetHostSetup
             $io->writeln('<comment>Host settings for PinGate (' . $targetName . ')</comment>');
 
             $dir = HostDir::normalize((string) $io->ask(
-                'FTP deploy path (empty = login root; e.g. public_html or public_html/pinoox3)',
+                'FTP folder (subdomain folder at account root, e.g. apps)',
                 $dir,
             ));
 
-            $gateUrl = self::askPinGateUrl($io, $dir);
+            $gateUrl = self::askPinGateUrl($io, null);
 
             if ($dir !== HostDir::fromTarget($target)) {
                 ConfigWriter::setTargetDir(ProjectPaths::configFile($paths), $targetName, $dir);
@@ -86,14 +85,11 @@ final class TargetHostSetup
             $io->writeln('<comment>PinGate setup (' . $targetName . ')</comment>');
 
             $dir = HostDir::normalize((string) $io->ask(
-                'FTP deploy path (empty = login root; e.g. public_html or public_html/pinoox3)',
+                'FTP folder (subdomain folder at account root, e.g. apps)',
                 $dir,
             ));
 
-            $web = HostDir::webPath($dir);
-            $defaultUrl = TargetGate::exampleUrl($web !== '' ? $web : null);
-            $io->writeln('  <fg=gray>Public URL path:</> <comment>/' . ($web !== '' ? $web . '/' : '') . 'pingate.php</comment>');
-            $gateUrl = self::askPinGateUrl($io, $dir, $defaultUrl);
+            $gateUrl = self::askPinGateUrl($io, null, '');
 
             if ($dir !== HostDir::fromTarget($raw)) {
                 ConfigWriter::setTargetDir(ProjectPaths::configFile($paths), $targetName, $dir);
@@ -116,7 +112,7 @@ final class TargetHostSetup
     public static function askPinGateUrl(SymfonyStyle $io, ?string $hostDir = null, string $default = ''): string
     {
         return trim((string) $io->ask(
-            'PinGate URL (domain or full URL, e.g. pinoox.com)',
+            'Site URL (e.g. https://apps.example.com)',
             $default,
             static function (mixed $value) use ($hostDir, $default): string {
                 $value = trim((string) $value);

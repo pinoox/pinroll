@@ -6,24 +6,58 @@ use Pinoox\Pinroll\Support\HostDir;
 
 final class PinGateProbe
 {
-    public static function missingDeployMessage(string $hostDir = ''): string
+    public static function missingDeployMessage(string $deployPath = ''): string
     {
-        return 'Run php pinoox pinroll:gate (FTP uploads to ' . HostDir::extractGuidePath($hostDir)
-            . ') and set top-level gate { url, token }.';
-    }
-
-    public static function htaccessHint(): string
-    {
-        return ' If response is HTML, add htaccess.snippet rules on the host.';
+        return 'Run: php pinoox pinroll:gate (uploads pingate.php + gate/ into '
+            . HostDir::extractGuidePath($deployPath)
+            . ') and set gate { url, token }.';
     }
 
     /**
-     * @return array{ok: bool, deployed: bool, message: string}
+     * @return list<string>
      */
-    public static function validateStatusResponse(int $status, string $body, string $hostDir = ''): array
-    {
-        $hint = self::missingDeployMessage($hostDir);
-        $entry = HostDir::gateEntryWebPath($hostDir);
+    public static function notJsonFixSteps(
+        string $deployPath = '',
+        string $webPath = '',
+        string $hostName = '',
+    ): array {
+        $hostArg = $hostName !== '' ? ' ' . $hostName : '';
+        $deploy = HostDir::deployRoot($deployPath);
+        $deployLabel = $deploy === '.' ? 'FTP/SSH login root' : $deploy . '/';
+        $gateUrlExample = $webPath === ''
+            ? 'https://your-domain.com/pingate.php?route='
+            : 'https://your-domain.com/' . $webPath . '/pingate.php?route=';
+
+        return [
+            'The gate URL returned HTML (your site), not PinGate JSON — pingate.php is missing, in the wrong folder, or rewritten.',
+            '',
+            'Fix:',
+            '  1. Upload PinGate into the same FTP folder as index.php (' . $deployLabel . '):',
+            '     php pinoox pinroll:gate' . $hostArg . ' -n',
+            '  2. Set gate URL to the public site (not the FTP folder name):',
+            '     ' . $gateUrlExample,
+            '     Subdomain docroot (FTP folder is the domain root): set web_path => \'\' in pinroll.config.php',
+            '     URL subdirectory only: set web_path to that path (e.g. \'shop\').',
+            '  3. On the host, confirm pingate.php sits next to index.php (FTP list the deploy folder).',
+            '  4. If the URL still returns HTML, paste pinroll/htaccess.snippet rules before the front-controller in the host .htaccess.',
+            '  5. Re-check: php pinoox pinroll:check' . $hostArg,
+            '     or: php pinoox pinroll:connect' . $hostArg . ' --reset',
+        ];
+    }
+
+    /**
+     * @return array{ok: bool, deployed: bool, message: string, hints?: list<string>}
+     */
+    public static function validateStatusResponse(
+        int $status,
+        string $body,
+        string $deployPath = '',
+        ?string $webPath = null,
+        string $hostName = '',
+    ): array {
+        $web = $webPath ?? HostDir::webPath($deployPath);
+        $hint = self::missingDeployMessage($deployPath);
+        $entry = HostDir::gateEntryWebPath($web);
         $trimmed = trim($body);
         $jsonError = self::jsonError($trimmed);
 
@@ -44,7 +78,6 @@ final class PinGateProbe
                 ];
             }
 
-            // Prefer the real server error (e.g. Pinroll not available / platform root)
             return [
                 'ok' => false,
                 'deployed' => str_contains($jsonError, 'Pinroll not available')
@@ -58,6 +91,7 @@ final class PinGateProbe
                 'ok' => false,
                 'deployed' => false,
                 'message' => 'Not found (404). ' . $hint,
+                'hints' => self::notJsonFixSteps($deployPath, $web, $hostName),
             ];
         }
 
@@ -102,7 +136,8 @@ final class PinGateProbe
             return [
                 'ok' => false,
                 'deployed' => false,
-                'message' => 'Not PinGate JSON. ' . $hint . self::htaccessHint() . $hintPhp,
+                'message' => 'Not PinGate JSON — URL returned HTML/site content instead of PinGate.' . $hintPhp,
+                'hints' => self::notJsonFixSteps($deployPath, $web, $hostName),
             ];
         }
 

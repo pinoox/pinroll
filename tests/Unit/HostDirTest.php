@@ -88,6 +88,21 @@ test('fromTarget uses config dir only', function () {
     ]))->toBe('');
 });
 
+test('web path from host prefers explicit web_path for subdomain docroots', function () {
+    expect(HostDir::webPathFromHost([
+        'deploy_path' => 'app',
+        'web_path' => '',
+    ]))->toBe('');
+
+    expect(HostDir::webPathFromHost([
+        'deploy_path' => 'app',
+    ]))->toBe('app');
+
+    expect(HostDir::webPathFromHost([
+        'deploy_path' => 'public_html/shop',
+    ]))->toBe('shop');
+});
+
 test('deploy root is relative to login root without public_html', function () {
     expect(HostDir::deployRoot(''))->toBe('.');
     expect(HostDir::deployRoot('pinoox3'))->toBe('pinoox3');

@@ -24,7 +24,7 @@ final class ConnectionSetup
 
         $dirDefault = $via === 'ftp' ? 'public_html' : '';
         $dir = HostDir::normalize((string) $io->ask(
-            'Deploy path relative to FTP/SSH login (empty = login root; e.g. public_html or public_html/shop)',
+            'FTP folder (subdomain folder at account root, e.g. apps — empty = login root)',
             $dirDefault,
         ));
 

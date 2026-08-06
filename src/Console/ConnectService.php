@@ -92,33 +92,30 @@ final class ConnectService
         $io->section('Connect — ' . $hostName . ' (' . $resolvedVia . ')');
 
         $dirDefault = HostDir::fromHost($raw);
-        if ($dirDefault === '') {
-            $dirDefault = 'public_html';
-        }
-
         $dir = HostDir::normalize((string) $io->ask(
-            'Deploy path (e.g. public_html or public_html/shop)',
+            'FTP folder (subdomain folder at account root, e.g. apps)',
             $dirDefault,
         ));
-        if ($dir === '') {
-            $dir = 'public_html';
-        }
 
-        $web = HostDir::webPath($dir);
         $gate = HostGate::credentials($raw, $resolvedVia);
         $siteDefault = $gate['url'] !== ''
             ? (string) preg_replace('#/pingate\.php.*$#i', '', rtrim($gate['url'], '/'))
-            : 'https://' . HostGate::EXAMPLE_DOMAIN . ($web !== '' ? '/' . $web : '');
+            : '';
         $siteUrl = trim((string) $io->ask(
-            'Public site URL (e.g. https://pinoox.com)',
-            $siteDefault,
+            'Site URL (e.g. https://apps.example.com)',
+            $siteDefault !== '' ? $siteDefault : null,
         ));
+        if ($siteUrl === '') {
+            throw new PinrollException('Site URL is required.');
+        }
 
-        $gateUrl = $this->resolveGateUrl($siteUrl, $dir);
+        // Use the site URL as entered — do not mix FTP folder into the URL.
+        $gateUrl = $this->resolveGateUrl($siteUrl);
+        $webPath = HostDir::dirFromGateUrl($gateUrl);
         $io->writeln('  <fg=gray>PinGate URL:</> <comment>' . $gateUrl . '</comment>');
 
         $saveVia = $bootstrapFtp ? 'pinion' : $resolvedVia;
-        $this->saveHost($configFile, $hostName, $dir, $gateUrl, $saveVia);
+        $this->saveHost($configFile, $hostName, $dir, $gateUrl, $saveVia, $webPath);
         Pinroll::boot($paths);
 
         $upload = $resolvedVia !== 'pinion';
@@ -291,22 +288,16 @@ final class ConnectService
         return '';
     }
 
-    private function resolveGateUrl(string $siteUrl, string $dir): string
+    private function resolveGateUrl(string $siteUrl): string
     {
         try {
-            return GateUrl::normalizeInput($siteUrl, $dir);
+            return GateUrl::normalizeInput($siteUrl);
         } catch (InvalidArgumentException $e) {
-            try {
-                $domain = GateUrl::normalizeDomain($siteUrl);
-
-                return GateUrl::fromDomain($domain, $dir);
-            } catch (InvalidArgumentException) {
-                throw new PinrollException($e->getMessage());
-            }
+            throw new PinrollException($e->getMessage());
         }
     }
 
-    private function saveHost(string $configFile, string $hostName, string $dir, string $gateUrl, string $via): void
+    private function saveHost(string $configFile, string $hostName, string $dir, string $gateUrl, string $via, ?string $webPath = null): void
     {
         $loaded = ConfigFileLoader::load($configFile);
         /** @var array<string, array<string, mixed>> $hosts */
@@ -321,6 +312,9 @@ final class ConnectService
 
         $hosts[$hostName]['deploy_path'] = $dir;
         $hosts[$hostName]['dir'] = $dir;
+        if ($webPath !== null) {
+            $hosts[$hostName]['web_path'] = $webPath;
+        }
         $hosts[$hostName]['via'] = $via;
         $hosts[$hostName]['gate'] = SampleConfig::gateBlock($hostName, $gateUrl);
 

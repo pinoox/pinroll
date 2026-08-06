@@ -61,15 +61,17 @@ final class GateSetupWizard
         $targets = is_array($loaded['targets'] ?? null) ? $loaded['targets'] : [];
         $target = $targets[$targetName] ?? $raw;
         $dir = HostDir::fromTarget($target);
-        $web = HostDir::webPath($dir);
 
         $siteUrl = trim((string) $io->ask(
-            'Public site URL (e.g. https://pinoox.com)',
-            'https://' . TargetGate::EXAMPLE_DOMAIN . ($web !== '' ? '/' . $web : ''),
+            'Site URL (e.g. https://apps.example.com)',
+            '',
         ));
+        if ($siteUrl === '') {
+            throw new \RuntimeException('Site URL is required.');
+        }
 
-        // Derive PinGate URL from the site URL — do not ask again (that looked like a hang).
-        [, $gateUrl] = self::parseSiteUrl($siteUrl, $dir);
+        // Derive PinGate URL from the site URL as entered — do not mix FTP folder.
+        [, $gateUrl] = self::parseSiteUrl($siteUrl, '');
         $io->writeln('  <fg=gray>PinGate URL:</> <comment>' . $gateUrl . '</comment>');
 
         $io->writeln('  <fg=gray>Building PinGate files (copying vendor — may take a minute)…</>');
@@ -95,7 +97,7 @@ final class GateSetupWizard
         }
 
         try {
-            $normalized = GateUrl::normalizeInput($input, $fallbackDir !== '' ? $fallbackDir : null);
+            $normalized = GateUrl::normalizeInput($input);
             $dir = HostDir::dirFromGateUrl($normalized);
 
             return [$dir, $normalized];
@@ -103,7 +105,7 @@ final class GateSetupWizard
             try {
                 $domain = GateUrl::normalizeDomain($input);
 
-                return [$fallbackDir, GateUrl::fromDomain($domain, $fallbackDir !== '' ? $fallbackDir : null)];
+                return [$fallbackDir, GateUrl::fromDomain($domain, null)];
             } catch (InvalidArgumentException $e) {
                 throw new \RuntimeException($e->getMessage());
             }

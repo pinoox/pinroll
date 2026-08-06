@@ -226,6 +226,8 @@ final class PinrollCli
                 . ($message !== '' ? '  ' . self::escape($message) : ''));
         }
 
+        self::printCheckHints($io, $check['checks'] ?? []);
+
         if (($check['message'] ?? '') !== '' && ($check['checks'] ?? []) === []) {
             $io->writeln('  ' . self::escape((string) $check['message']));
         }
@@ -241,7 +243,8 @@ final class PinrollCli
                 . ' then <comment>php pinoox pinroll:install' . $hostArg . '</comment>',
             );
         } else {
-            $io->writeln('  <fg=gray>Fix credentials in .env or run</> <comment>php pinoox pinroll:connect --reset</comment>');
+            $io->writeln('  <fg=gray>Fix the steps above, then re-run</> <comment>php pinoox pinroll:check' . $hostArg . '</comment>');
+            $io->writeln('  <fg=gray>or reconnect:</> <comment>php pinoox pinroll:connect' . $hostArg . ' --reset</comment>');
         }
     }
 
@@ -456,6 +459,36 @@ final class PinrollCli
             }
 
             $io->writeln('    <fg=red>·</> ' . (string) ($check['message'] ?? $check['label'] ?? 'check failed'));
+        }
+
+        self::printCheckHints($io, $result['checks'] ?? []);
+    }
+
+    /**
+     * @param list<mixed> $checks
+     */
+    private static function printCheckHints(SymfonyStyle $io, array $checks): void
+    {
+        $printed = false;
+        foreach ($checks as $check) {
+            if (!is_array($check) || ($check['ok'] ?? false)) {
+                continue;
+            }
+
+            $hints = $check['hints'] ?? null;
+            if (!is_array($hints) || $hints === []) {
+                continue;
+            }
+
+            if (!$printed) {
+                $io->newLine();
+                $io->writeln('  <comment>How to fix</comment>');
+                $printed = true;
+            }
+
+            foreach ($hints as $line) {
+                $io->writeln('  ' . self::escape((string) $line));
+            }
         }
     }
 

@@ -365,6 +365,9 @@ final class DeployRunner
         $hash = TokenGenerator::hashToken($token);
 
         $dir = $hostDir !== null ? HostDir::normalize($hostDir) : HostDir::fromTarget($target);
+        $webForUrl = HostDir::webPathFromHost(array_key_exists('web_path', $raw)
+            ? $raw
+            : array_merge($raw, ['deploy_path' => $dir]));
 
         // Always keep local files until FTP upload finishes (then cleanup). Zip is optional.
         PushProgress::arrow('Building PinGate files…');
@@ -375,7 +378,7 @@ final class DeployRunner
             'created_at' => date('c'),
             'dir' => $dir,
             'platform_root' => '..',
-        ], $zip, $dir, keepLocal: true, withVendor: $withVendor);
+        ], $zip, $webForUrl, keepLocal: true, withVendor: $withVendor);
 
         $resolvedUrl = $gateUrl !== null ? rtrim($gateUrl, '/') : '';
         $gateUrlFromUser = $resolvedUrl !== '';
@@ -385,7 +388,7 @@ final class DeployRunner
                 $resolvedUrl = rtrim($existingUrl, '/');
                 $gateUrlFromUser = true;
             } else {
-                $resolvedUrl = rtrim(HostGate::exampleUrl($dir), '/');
+                $resolvedUrl = rtrim(HostGate::exampleUrl($webForUrl), '/');
             }
         }
 

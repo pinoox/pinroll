@@ -49,9 +49,9 @@ final class TargetChecker
 
         try {
             $checks = match ($transport) {
-                'pinion' => $this->checkPinion($target),
+                'pinion' => $this->checkPinion($target, $targetName),
                 'ssh' => $this->checkSsh($target),
-                'ftp' => $this->checkFtp($target),
+                'ftp' => $this->checkFtp($target, $targetName),
                 'local' => $this->checkLocal($target),
                 default => [['ok' => false, 'label' => 'transport', 'message' => "Unknown transport: {$transport}"]],
             };
@@ -76,14 +76,15 @@ final class TargetChecker
 
     /**
      * @param array<string, mixed> $target
-     * @return list<array{ok: bool, label: string, message: string}>
+     * @return list<array{ok: bool, label: string, message: string, hints?: list<string>}>
      */
-    private function checkPinion(array $target): array
+    private function checkPinion(array $target, string $hostName = ''): array
     {
         $checks = [];
         $gateUrl = rtrim((string) ($target['gate_url'] ?? ''), '/');
         $token = (string) ($target['token'] ?? '');
         $hostDir = HostDir::fromTarget($target);
+        $webDir = HostDir::webPathFromHost($target);
 
         $checks[] = $this->checkField(
             'dir',
@@ -98,18 +99,17 @@ final class TargetChecker
         );
 
         $checks[] = $this->checkField('gate_url', $gateUrl !== '', $gateUrl !== '' ? $gateUrl : 'Missing gate_url (set in .env)');
-        $webDir = HostDir::webPath($hostDir);
         if ($gateUrl !== '' && !str_contains($gateUrl, HostDir::GATE_ENTRY)) {
             $checks[] = $this->checkField(
                 'gate_url_path',
                 false,
-                'gate_url should end with /' . HostDir::gateEntryWebPath($hostDir) . '?route=',
+                'gate_url should end with /' . HostDir::gateEntryWebPath($webDir) . '?route=',
             );
         } elseif ($gateUrl !== '' && $webDir !== '' && !str_contains($gateUrl, '/' . $webDir . '/')) {
             $checks[] = $this->checkField(
                 'gate_url_dir',
                 false,
-                'gate_url should include /' . $webDir . '/ when site is in a subfolder (e.g. https://domain.com/' . $webDir . '/pingate.php?route=)',
+                'gate_url should include /' . $webDir . '/ when the site is a URL subfolder. For subdomain document roots set web_path => \'\'.',
             );
         }
 
@@ -158,9 +158,11 @@ final class TargetChecker
             (int) $http['status'],
             (string) ($http['body'] ?? ''),
             $hostDir,
+            $webDir,
+            $hostName,
         );
 
-        $checks[] = $this->checkField('pingate', $probe['ok'], $probe['message']);
+        $checks[] = $this->checkField('pingate', $probe['ok'], $probe['message'], $probe['hints'] ?? []);
 
         if ($probe['ok'] && $token !== '') {
             $checks[] = $this->checkField('auth', true, 'Bearer token accepted');
@@ -231,14 +233,15 @@ final class TargetChecker
 
     /**
      * @param array<string, mixed> $target
-     * @return list<array{ok: bool, label: string, message: string}>
+     * @return list<array{ok: bool, label: string, message: string, hints?: list<string>}>
      */
-    private function checkFtp(array $target): array
+    private function checkFtp(array $target, string $hostName = ''): array
     {
         $host = (string) ($target['host'] ?? '');
         $user = (string) ($target['user'] ?? '');
         $password = (string) ($target['password'] ?? '');
         $hostDir = HostDir::fromTarget($target);
+        $webDir = HostDir::webPathFromHost($target);
         $gateUrl = rtrim((string) ($target['gate_url'] ?? ''), '/');
 
         $checks = [
@@ -282,8 +285,14 @@ final class TargetChecker
 
         if ($gateUrl !== '') {
             $http = $this->httpGet($gateUrl . 'status', (string) ($target['token'] ?? ''));
-            $probe = PinGateProbe::validateStatusResponse((int) $http['status'], (string) ($http['body'] ?? ''), $hostDir);
-            $checks[] = $this->checkField('pingate', $probe['ok'], $probe['message']);
+            $probe = PinGateProbe::validateStatusResponse(
+                (int) $http['status'],
+                (string) ($http['body'] ?? ''),
+                $hostDir,
+                $webDir,
+                $hostName,
+            );
+            $checks[] = $this->checkField('pingate', $probe['ok'], $probe['message'], $probe['hints'] ?? []);
         }
 
         return $checks;
@@ -372,11 +381,17 @@ final class TargetChecker
     }
 
     /**
-     * @return array{ok: bool, label: string, message: string}
+     * @param list<string> $hints
+     * @return array{ok: bool, label: string, message: string, hints?: list<string>}
      */
-    private function checkField(string $label, bool $ok, string $message): array
+    private function checkField(string $label, bool $ok, string $message, array $hints = []): array
     {
-        return compact('ok', 'label', 'message');
+        $field = compact('ok', 'label', 'message');
+        if ($hints !== []) {
+            $field['hints'] = $hints;
+        }
+
+        return $field;
     }
 
     private function isAbsolutePath(string $path): bool

@@ -103,6 +103,7 @@ final class PinGateExporter
 
     public static function htaccessSnippetContent(?string $hostDir = null): string
     {
+        // $hostDir here is the *URL* path under the domain (web_path), not FTP deploy_path.
         $web = HostDir::webPath($hostDir);
         $prefix = $web === '' ? '' : $web . '/';
 
