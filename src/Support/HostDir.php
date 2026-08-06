@@ -50,6 +50,24 @@ final class HostDir
         return implode('/', $parts);
     }
 
+    /**
+     * Public URL path for a host.
+     *
+     * Prefer explicit `web_path` when set (including empty string for subdomain
+     * docroots: FTP `app/` → https://app.example.com/ with no /app/ URL prefix).
+     * Otherwise derive from deploy_path by stripping public_html/www/….
+     *
+     * @param array<string, mixed> $host
+     */
+    public static function webPathFromHost(array $host): string
+    {
+        if (array_key_exists('web_path', $host)) {
+            return self::normalize((string) $host['web_path']);
+        }
+
+        return self::webPath(self::fromHost($host));
+    }
+
     public static function suggestFromDomain(string $domain): string
     {
         $domain = trim($domain);
@@ -230,7 +248,8 @@ final class HostDir
             return $deploy . '/';
         }
 
-        return $deploy . '/ (usually public_html/' . $deploy . '/)';
+        // Addon/subdomain folders often live next to public_html (e.g. home/user/app/).
+        return $deploy . '/ (FTP-relative; subdomain docroot or public_html/' . $deploy . '/)';
     }
 
     public static function sshIncomingPath(?string $hostDir, string $filename): string

@@ -2,6 +2,8 @@
 
 namespace Pinoox\Pinroll\Console;
 
+use Pinoox\Pinroll\Support\HostDir;
+
 final class ConfigTemplate
 {
     private const HEADER = <<<'PHP'
@@ -59,6 +61,14 @@ PHP;
 
     /**
      * @param array<string, mixed> $host
+     */
+    public static function renderHostBlock(string $name, array $host): string
+    {
+        return implode("\n", self::renderHost($name, $host)) . "\n";
+    }
+
+    /**
+     * @param array<string, mixed> $host
      * @return list<string>
      */
     private static function renderHost(string $name, array $host): array
@@ -69,9 +79,14 @@ PHP;
         $lines = [
             '        ' . var_export($name, true) . ' => [',
             "            'deploy_path' => {$deployPath},",
-            "            'via' => " . var_export($via, true) . ',',
-            '',
         ];
+
+        if (array_key_exists('web_path', $host)) {
+            $lines[] = "            'web_path' => " . var_export(HostDir::normalize((string) $host['web_path']), true) . ',';
+        }
+
+        $lines[] = "            'via' => " . var_export($via, true) . ',';
+        $lines[] = '';
 
         $lines = array_merge($lines, self::renderApps($host));
         $lines[] = '';

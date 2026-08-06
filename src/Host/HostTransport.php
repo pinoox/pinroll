@@ -86,6 +86,10 @@ final class HostTransport
             'path' => (string) ($block['path'] ?? $host['path'] ?? ''),
         ];
 
+        if (array_key_exists('web_path', $host)) {
+            $resolved['web_path'] = $host['web_path'];
+        }
+
         foreach (['apps', 'rules', 'hooks', 'keep', 'store', 'auto_clean'] as $key) {
             if (isset($host[$key])) {
                 $resolved[$key] = $host[$key];

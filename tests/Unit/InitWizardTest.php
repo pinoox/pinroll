@@ -35,3 +35,11 @@ test('sample config includes production target with ftp block', function () {
     expect($targets['production']['via'])->toBe('ftp');
     expect($targets['production']['ftp'])->toBeArray();
 });
+
+test('sample config hosts uses provided host name for env keys', function () {
+    $hosts = SampleConfig::hosts('myconnect');
+
+    expect(array_keys($hosts))->toBe(['myconnect']);
+    expect($hosts['myconnect']['ftp']['host']['_env'])->toBe('PINROLL_MYCONNECT_HOST');
+    expect($hosts['myconnect']['gate']['url']['_env'])->toBe('PINROLL_MYCONNECT_URL');
+});

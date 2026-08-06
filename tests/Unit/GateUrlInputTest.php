@@ -31,3 +31,13 @@ test('normalize domain strips scheme and path', function () {
     expect(GateUrl::normalizeDomain('https://www.example.com/path'))
         ->toBe('www.example.com');
 });
+
+test('full url is not mixed with hostDir', function () {
+    expect(GateUrl::normalizeInput('https://apps.example.com', 'apps'))
+        ->toBe('https://apps.example.com/pingate.php?route=');
+    expect(GateUrl::normalizeInput('https://example.com/shop', 'ignored'))
+        ->toBe('https://example.com/shop/pingate.php?route=');
+    expect(GateUrl::normalizeInput('https://pinoox.com/apps.pouyagaranco.ir', 'apps.pouyagaranco.ir'))
+        ->toBe('https://pinoox.com/apps.pouyagaranco.ir/pingate.php?route=');
+});
+

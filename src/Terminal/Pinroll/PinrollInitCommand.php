@@ -22,7 +22,7 @@ class PinrollInitCommand extends Terminal
     protected function configure(): void
     {
         $this
-            ->addArgument('target', InputArgument::OPTIONAL, 'Target name', 'production')
+            ->addArgument('target', InputArgument::OPTIONAL, 'Host name (env keys use this, e.g. myconnect → PINROLL_MYCONNECT_*)', 'production')
             ->addOption('force', 'f', InputOption::VALUE_NONE, 'Rewrite pinroll.config.php');
     }
 

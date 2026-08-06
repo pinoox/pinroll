@@ -15,11 +15,14 @@ test('pingate probe accepts valid status json', function () {
 });
 
 test('pingate probe rejects html homepage as not deployed', function () {
-    $result = PinGateProbe::validateStatusResponse(200, '<html><body>Welcome</body></html>', 'pinoox3');
+    $result = PinGateProbe::validateStatusResponse(200, '<html><body>Welcome</body></html>', 'app', '', 'staging');
 
     expect($result['ok'])->toBeFalse();
     expect($result['deployed'])->toBeFalse();
-    expect($result['message'])->toContain('htaccess');
+    expect($result['message'])->toContain('Not PinGate JSON');
+    expect($result['hints'] ?? [])->not->toBeEmpty();
+    expect(implode("\n", $result['hints']))->toContain('pinroll:gate');
+    expect(implode("\n", $result['hints']))->toContain('web_path');
 });
 
 test('pingate probe extracts php warning from xdebug html', function () {
@@ -38,6 +41,7 @@ test('pingate probe rejects 404 with deploy hint', function () {
     expect($result['ok'])->toBeFalse();
     expect($result['message'])->toContain('Not found (404)');
     expect($result['message'])->toContain('pinroll:gate');
+    expect(implode("\n", $result['hints'] ?? []))->toContain('pinroll:check');
 });
 
 test('pingate probe detects invalid gate url route', function () {

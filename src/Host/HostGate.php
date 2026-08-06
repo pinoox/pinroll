@@ -130,7 +130,7 @@ final class HostGate
         }
 
         $dir = HostDir::fromHost($host);
-        $web = HostDir::webPath($dir);
+        $web = HostDir::webPathFromHost($host);
 
         return self::exampleUrl($web !== '' ? $web : null);
     }

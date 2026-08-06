@@ -194,6 +194,52 @@ final class ConfigWriter
     /**
      * @param list<string>|null $apps null clears apps (commented placeholder); non-empty list sets apps[]
      */
+    /**
+     * Append a host block without rewriting existing hosts (preserves their env keys).
+     *
+     * @param array<string, mixed>|null $host null = SampleConfig::productionHost($hostName)
+     */
+    public static function addHost(string $path, string $hostName, ?array $host = null): void
+    {
+        if (!is_file($path)) {
+            throw new PinrollException('Pinroll config not found: ' . $path);
+        }
+
+        $contents = file_get_contents($path);
+        if ($contents === false) {
+            throw new PinrollException('Unable to read pinroll config: ' . $path);
+        }
+
+        $hostPattern = '/^\s+' . preg_quote(var_export($hostName, true), '/') . '\s*=>/m';
+        if (preg_match($hostPattern, $contents)) {
+            return;
+        }
+
+        $block = ConfigTemplate::renderHostBlock(
+            $hostName,
+            $host ?? SampleConfig::productionHost($hostName),
+        );
+
+        // Insert before the closing of the hosts array: "    ]," then "];"
+        if (!preg_match('/\n    \],\s*\n\];\s*$/', $contents)) {
+            throw new PinrollException('Unable to locate hosts array end in pinroll.config.php');
+        }
+
+        $updated = preg_replace(
+            '/\n    \],\s*\n\];\s*$/',
+            "\n" . $block . "    ],\n];\n",
+            $contents,
+            1,
+        );
+        if (!is_string($updated) || $updated === $contents) {
+            throw new PinrollException('Unable to insert host "' . $hostName . '" into pinroll.config.php');
+        }
+
+        if (file_put_contents($path, $updated) === false) {
+            throw new PinrollException('Unable to write pinroll config: ' . $path);
+        }
+    }
+
     public static function setHostApps(string $path, string $hostName, ?array $apps): void
     {
         if (!is_file($path)) {

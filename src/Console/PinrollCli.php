@@ -177,20 +177,25 @@ final class PinrollCli
             $io->writeln('  <fg=green>config</>  ' . self::relPath($data['config']));
         }
 
+        $hostArg = self::hostCliSuffix($target);
+        $hostKey = ConfigWriter::envKeyFor($target, 'host', 'ftp');
+        $userKey = ConfigWriter::envKeyFor($target, 'user', 'ftp');
+        $passKey = ConfigWriter::envKeyFor($target, 'password', 'ftp');
+
         $io->newLine();
         $io->section('Next steps');
         $io->writeln([
             '  <fg=yellow>1.</> Set FTP credentials in <comment>.env</comment>:',
-            '       PINROLL_' . strtoupper(preg_replace('/[^a-zA-Z0-9]+/', '_', $target) ?: 'PRODUCTION') . '_HOST=',
-            '       PINROLL_' . strtoupper(preg_replace('/[^a-zA-Z0-9]+/', '_', $target) ?: 'PRODUCTION') . '_USER=',
-            '       PINROLL_' . strtoupper(preg_replace('/[^a-zA-Z0-9]+/', '_', $target) ?: 'PRODUCTION') . '_PASSWORD=',
+            '       ' . $hostKey . '=',
+            '       ' . $userKey . '=',
+            '       ' . $passKey . '=',
             '',
             '  <fg=yellow>2.</> Connect & upload PinGate:',
-            '       <comment>php pinoox pinroll:connect</comment>',
+            '       <comment>php pinoox pinroll:connect' . $hostArg . '</comment>',
             '',
             '  <fg=yellow>3.</> Go live:',
-            '       <comment>php pinoox pinroll:deploy' . self::hostCliSuffix($target) . '</comment>',
-            '       <fg=gray>or upload only:</> <comment>php pinoox pinroll:push' . self::hostCliSuffix($target) . '</comment>',
+            '       <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>',
+            '       <fg=gray>or upload only:</> <comment>php pinoox pinroll:push' . $hostArg . '</comment>',
         ]);
     }
 
@@ -226,6 +231,8 @@ final class PinrollCli
                 . ($message !== '' ? '  ' . self::escape($message) : ''));
         }
 
+        self::printCheckHints($io, $check['checks'] ?? []);
+
         if (($check['message'] ?? '') !== '' && ($check['checks'] ?? []) === []) {
             $io->writeln('  ' . self::escape((string) $check['message']));
         }
@@ -241,7 +248,8 @@ final class PinrollCli
                 . ' then <comment>php pinoox pinroll:install' . $hostArg . '</comment>',
             );
         } else {
-            $io->writeln('  <fg=gray>Fix credentials in .env or run</> <comment>php pinoox pinroll:connect --reset</comment>');
+            $io->writeln('  <fg=gray>Fix the steps above, then re-run</> <comment>php pinoox pinroll:check' . $hostArg . '</comment>');
+            $io->writeln('  <fg=gray>or reconnect:</> <comment>php pinoox pinroll:connect' . $hostArg . ' --reset</comment>');
         }
     }
 
@@ -456,6 +464,36 @@ final class PinrollCli
             }
 
             $io->writeln('    <fg=red>·</> ' . (string) ($check['message'] ?? $check['label'] ?? 'check failed'));
+        }
+
+        self::printCheckHints($io, $result['checks'] ?? []);
+    }
+
+    /**
+     * @param list<mixed> $checks
+     */
+    private static function printCheckHints(SymfonyStyle $io, array $checks): void
+    {
+        $printed = false;
+        foreach ($checks as $check) {
+            if (!is_array($check) || ($check['ok'] ?? false)) {
+                continue;
+            }
+
+            $hints = $check['hints'] ?? null;
+            if (!is_array($hints) || $hints === []) {
+                continue;
+            }
+
+            if (!$printed) {
+                $io->newLine();
+                $io->writeln('  <comment>How to fix</comment>');
+                $printed = true;
+            }
+
+            foreach ($hints as $line) {
+                $io->writeln('  ' . self::escape((string) $line));
+            }
         }
     }
 

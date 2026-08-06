@@ -221,10 +221,10 @@ final class ConfigWizard
         $target['dir'] = $this->askDir($domain);
 
         $suggestedUrl = $domain !== ''
-            ? GateUrl::fromDomain($domain, $target['dir'])
+            ? GateUrl::fromDomain($domain, null)
             : '';
 
-        $gateUrl = TargetHostSetup::askPinGateUrl($this->io, $target['dir'], $suggestedUrl);
+        $gateUrl = TargetHostSetup::askPinGateUrl($this->io, null, $suggestedUrl);
 
         $target['gate_url'] = [
             '_env' => ConfigWriter::envKeyFor($name, 'gate_url'),
@@ -271,21 +271,11 @@ final class ConfigWizard
         $this->io->note('Upload path: ' . HostDir::incomingDir($target['dir']) . '/ — PinGate is optional.');
 
         if ($this->io->confirm('Also configure PinGate for remote apply over HTTP?', false)) {
-            $domain = trim((string) $this->io->ask(
-                'Site domain for PinGate URL',
-                $domainHint,
-                function (mixed $value): string {
-                    try {
-                        return GateUrl::normalizeDomain((string) $value);
-                    } catch (InvalidArgumentException $e) {
-                        throw new \RuntimeException($e->getMessage());
-                    }
-                },
-            ));
+            $siteDefault = $domainHint !== '' ? 'https://' . ltrim($domainHint, '/') : '';
             $gateUrl = TargetHostSetup::askPinGateUrl(
                 $this->io,
-                $target['dir'],
-                GateUrl::fromDomain($domain, $target['dir']),
+                null,
+                $siteDefault,
             );
             $target['gate'] = SampleConfig::gateBlock($name, $gateUrl);
         }
@@ -325,13 +315,11 @@ final class ConfigWizard
 
     private function askDir(?string $domain = null): string
     {
-        $suggested = $domain !== null && $domain !== '' ? HostDir::suggestFromDomain($domain) : '';
-        $label = 'FTP deploy path (empty = login root; e.g. public_html or public_html/shop)';
-        if ($suggested !== '') {
-            $label .= ' — suggestion: public_html/' . $suggested;
-        }
-
-        return HostDir::normalize((string) $this->io->ask($label, ''));
+        unset($domain);
+        return HostDir::normalize((string) $this->io->ask(
+            'FTP folder (subdomain folder at account root, e.g. apps — empty = login root)',
+            '',
+        ));
     }
 
     private function relativePath(string $absolute): string

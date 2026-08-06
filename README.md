@@ -58,6 +58,18 @@ php pinoox pinroll:deploy
 | 6 | `pinroll:check` | Verify transport + PinGate |
 | 7 | `pinroll:deploy` | Build, upload, and install apps (go live) |
 
+### Subdomain folders
+
+`deploy_path` is the FTP folder at account root (e.g. `apps`) that is linked as a subdomain. The site URL is used **as entered** for PinGate — path and URL are not mixed:
+
+| FTP folder | Site URL | Gate URL |
+|------------|----------|----------|
+| `apps` | `https://apps.example.com` | `https://apps.example.com/pingate.php?route=` |
+| `public_html` | `https://example.com` | `https://example.com/pingate.php?route=` |
+| `public_html/shop` | `https://example.com/shop` | `https://example.com/shop/pingate.php?route=` |
+
+If `pinroll:check` reports **Not PinGate JSON**, upload gate next to `index.php` and confirm the site URL matches the live domain.
+
 ## CLI
 
 ```bash

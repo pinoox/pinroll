@@ -2,7 +2,6 @@
 
 namespace Pinoox\Pinroll\Console;
 
-use Pinoox\Pinroll\Exception\PinrollException;
 use Pinoox\Pinroll\Support\NativePathResolver;
 use Pinoox\Pinroll\Support\ProjectPaths;
 
@@ -11,6 +10,7 @@ final class ProjectInitializer
     public function __construct(
         private readonly ?string $projectRoot = null,
         private readonly bool $force = false,
+        private readonly string $hostName = 'production',
     ) {
     }
 
@@ -24,7 +24,12 @@ final class ProjectInitializer
         $configFile = ProjectPaths::configFile($paths);
 
         if (!is_file($configFile) || $this->force) {
-            ConfigWriter::write($configFile, SampleConfig::targets(ProjectPackages::defaultPackage($this->projectRoot)));
+            $name = trim($this->hostName) !== '' ? trim($this->hostName) : 'production';
+            ConfigWriter::writeHosts(
+                $configFile,
+                SampleConfig::hosts($name),
+                SampleConfig::globalDefaults($name),
+            );
             $written[] = $configFile;
         }
 

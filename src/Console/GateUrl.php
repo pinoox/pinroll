@@ -29,6 +29,7 @@ final class GateUrl
             throw new InvalidArgumentException('PinGate URL is required.');
         }
 
+        // Bare domain only may use $hostDir (URL subdirectory). Full URLs stay as entered.
         if (!preg_match('#^https?://#i', $input) && !str_contains($input, '/')) {
             return rtrim(self::fromDomain(self::normalizeDomain($input), $hostDir), '/');
         }
@@ -42,7 +43,7 @@ final class GateUrl
             throw new InvalidArgumentException(self::invalidHostMessage());
         }
 
-        return self::ensureRouteSuffix(rtrim($input, '/'), $hostDir);
+        return self::ensureRouteSuffix(rtrim($input, '/'), null);
     }
 
     public static function normalizeDomain(string $input): string
