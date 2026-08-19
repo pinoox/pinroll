@@ -20,17 +20,19 @@ test('push rule resolver uses default app rule', function () {
     expect($plan['vendor'])->toBeFalse();
 });
 
-test('push rule resolver honors all flag', function () {
+test('push rule resolver honors full flag as platform plus apps', function () {
     $target = [
         'apps' => ['com_pinoox_manager'],
-        'rules' => ['all' => ['app', 'vendor', 'theme']],
+        'rules' => ['all' => ['app', 'vendor', 'theme', 'platform']],
     ];
 
-    $plan = PushRuleResolver::resolve($target, ['all' => true]);
+    $plan = PushRuleResolver::resolve($target, ['full' => true]);
 
-    expect($plan['parts'])->toBe(['app', 'vendor', 'theme']);
-    expect($plan['vendor'])->toBeTrue();
-    expect($plan['theme'])->toBeTrue();
+    expect($plan['parts'])->toBe(['platform', 'app'])
+        ->and($plan['platform'])->toBeTrue()
+        ->and($plan['app'])->toBeTrue()
+        ->and($plan['vendor'])->toBeFalse()
+        ->and($plan['apps'])->toBe(['com_pinoox_manager']);
 });
 
 test('push rule resolver combines vendor and theme flags', function () {

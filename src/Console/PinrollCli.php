@@ -63,6 +63,38 @@ final class PinrollCli
     }
 
     /**
+     * @param array<string, mixed> $data
+     */
+    public static function printProvisionResult(SymfonyStyle $io, array $data): void
+    {
+        $host = (string) ($data['host'] ?? '');
+        $io->newLine();
+        $io->block('Host provisioned', 'OK', 'fg=black;bg=green', ' ', true);
+
+        if (!empty($data['setup_only'])) {
+            $io->writeln('  <fg=gray>Mode</>  setup-only (zip extract skipped)');
+        }
+
+        if (is_array($data['bootstrap'] ?? null)) {
+            $io->writeln('  <fg=green;options=bold>✓</> <info>platform.zip extracted</info>');
+        }
+
+        if (is_array($data['check_db'] ?? null) && !empty($data['check_db']['ok'])) {
+            $io->writeln('  <fg=green;options=bold>✓</> <info>database reachable from host</info>');
+        }
+
+        if (is_array($data['setup'] ?? null) && !empty($data['setup']['installed'])) {
+            $io->writeln('  <fg=green;options=bold>✓</> <info>installer setup finished</info>');
+        }
+
+        $hostArg = self::hostCliSuffix($host);
+        $io->newLine();
+        $io->writeln('  Later updates (not a fresh install):');
+        $io->writeln('  <comment>php pinoox pinroll:deploy --full' . $hostArg . '</comment>');
+        $io->writeln('  <fg=gray>platform + every installed app</>');
+    }
+
+    /**
      * @param array{
      *     target?: string,
      *     zip?: string|null,
@@ -189,12 +221,15 @@ final class PinrollCli
             '       ' . $userKey . '=',
             '       ' . $passKey . '=',
             '',
-            '  <fg=yellow>2.</> Connect & upload PinGate:',
+            '  <fg=yellow>2.</> Blank host — first install:',
+            '       <comment>php pinoox pinroll:provision' . $hostArg . '</comment>',
+            '',
+            '  <fg=yellow>3.</> Existing site — connect & upload PinGate:',
             '       <comment>php pinoox pinroll:connect' . $hostArg . '</comment>',
             '',
-            '  <fg=yellow>3.</> Go live:',
+            '  <fg=yellow>4.</> Go live / update:',
             '       <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>',
-            '       <fg=gray>or upload only:</> <comment>php pinoox pinroll:push' . $hostArg . '</comment>',
+            '       <fg=gray>or platform + all apps:</> <comment>php pinoox pinroll:deploy --full' . $hostArg . '</comment>',
         ]);
     }
 

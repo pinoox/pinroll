@@ -35,6 +35,7 @@ class PinrollDeployCommand extends Terminal
             ->addOption('host', null, InputOption::VALUE_REQUIRED, 'Host override')
             ->addOption('via', null, InputOption::VALUE_REQUIRED, 'Transport: ftp, ssh, pinion')
             ->addOption('all', null, InputOption::VALUE_NONE, 'Push app + vendor + theme')
+            ->addOption('full', null, InputOption::VALUE_NONE, 'Update platform + every installed app')
             ->addOption('vendor', null, InputOption::VALUE_NONE, 'Sync vendor/')
             ->addOption('theme', null, InputOption::VALUE_NONE, 'Rebuild theme assets (fe:build) then sync / include in app .pinx')
             ->addOption('platform', null, InputOption::VALUE_NONE, 'Build and ship a platform .zip (pinx:build platform / pinx:update)')

@@ -48,3 +48,33 @@ test('host env can build a synthetic production host from env alone', function (
     putenv('PINROLL_TOKEN');
     unset($_ENV['PINROLL_URL'], $_ENV['PINROLL_TOKEN']);
 });
+
+test('host env overlays PINROLL_DB_* and PINROLL_ADMIN_* onto production provision', function () {
+    $keys = [
+        'PINROLL_DB_HOST' => '127.0.0.1',
+        'PINROLL_DB_DATABASE' => 'shop',
+        'PINROLL_ADMIN_EMAIL' => 'ada@example.com',
+        'PINROLL_LANG' => 'fa',
+    ];
+    foreach ($keys as $key => $value) {
+        putenv($key . '=' . $value);
+        $_ENV[$key] = $value;
+    }
+
+    $host = HostEnv::overlay('production', [
+        'provision' => [
+            'db' => ['host' => 'localhost', 'database' => 'pinoox'],
+            'user' => ['email' => 'old@example.com'],
+        ],
+    ]);
+
+    expect($host['provision']['db']['host'])->toBe('127.0.0.1')
+        ->and($host['provision']['db']['database'])->toBe('shop')
+        ->and($host['provision']['user']['email'])->toBe('ada@example.com')
+        ->and($host['lang'])->toBe('fa');
+
+    foreach (array_keys($keys) as $key) {
+        putenv($key);
+        unset($_ENV[$key]);
+    }
+});

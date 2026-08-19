@@ -53,6 +53,8 @@ final class PinGateHttpHandler
             $method === 'POST' && $path === 'rollback' => $this->handleRollback($input),
             $method === 'POST' && $path === 'cleanup' => $this->handleCleanup($input),
             $method === 'GET' && $path === 'history' => $this->handleHistory(),
+            $method === 'POST' && $path === 'setup' => $this->handleSetup($input),
+            $method === 'POST' && $path === 'check-db' => $this->handleCheckDb($input),
             default => throw new PinrollException('Unknown PinGate route: ' . $path, 404),
         };
     }
@@ -241,6 +243,36 @@ final class PinGateHttpHandler
         ], IncomingRelease::list($incoming));
 
         return ['releases' => $releases];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    private function handleSetup(array $input): array
+    {
+        $db = is_array($input['db'] ?? null) ? $input['db'] : [];
+        $user = is_array($input['user'] ?? null) ? $input['user'] : [];
+        $lang = isset($input['lang']) ? (string) $input['lang'] : null;
+
+        return HostSetup::run(
+            $this->paths->root(),
+            $db,
+            $user,
+            $lang,
+            !empty($input['force']),
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    private function handleCheckDb(array $input): array
+    {
+        $db = is_array($input['db'] ?? null) ? $input['db'] : [];
+
+        return HostSetup::checkDb($this->paths->root(), $db);
     }
 
     /**

@@ -108,7 +108,10 @@ test('init production host writes unscoped PINROLL_* env stubs', function () {
         ->and($env)->toContain('PINROLL_PATH=')
         ->and($env)->toContain('PINROLL_KEEP=')
         ->and($env)->toContain('PINROLL_URL=')
-        ->and($env)->toContain('PINROLL_TOKEN=');
+        ->and($env)->toContain('PINROLL_TOKEN=')
+        ->and($env)->toContain('PINROLL_DB_HOST=')
+        ->and($env)->toContain('PINROLL_ADMIN_EMAIL=')
+        ->and($env)->toContain('PINROLL_LANG=');
 
     @unlink($result['config']);
     @rmdir($root . '/.pinoox');

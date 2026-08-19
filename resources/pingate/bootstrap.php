@@ -25,6 +25,18 @@ function pinroll_pingate_run(string $root, array $gateConfig = []): void
         return;
     }
 
+    if ($method === 'POST' && $path === 'bootstrap') {
+        $input = json_decode((string) file_get_contents('php://input'), true);
+        pinroll_handle_platform_bootstrap(
+            $root,
+            $gateConfig,
+            is_array($input) ? $input : [],
+            $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null),
+        );
+
+        return;
+    }
+
     try {
         $root = pinroll_resolve_platform_root($root, $gateConfig);
     } catch (Throwable $e) {
@@ -291,6 +303,343 @@ function pinroll_handle_vendor_extract(string $root, array $gateConfig, array $i
             'autoload' => true,
         ],
     ], JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Extract platform.zip next to pingate.php (first-time install). Never trusts client zip names.
+ *
+ * @param array<string, mixed> $gateConfig
+ * @param array<string, mixed> $input
+ */
+function pinroll_handle_platform_bootstrap(string $root, array $gateConfig, array $input, ?string $authorization): void
+{
+    $rootReal = realpath($root);
+    if ($rootReal === false || !is_dir($rootReal)) {
+        pinroll_gate_json_error(500, 'Invalid platform root.');
+
+        return;
+    }
+    $root = str_replace('\\', '/', $rootReal);
+
+    $expectedHash = pinroll_gate_token_hash($root, $gateConfig);
+    if ($expectedHash === '' || !preg_match('/^[a-f0-9]{64}$/', $expectedHash)) {
+        pinroll_gate_json_error(503, 'PinGate token_hash missing or invalid. Re-run pinroll:gate.');
+
+        return;
+    }
+
+    if (pinroll_vendor_auth_blocked($root)) {
+        pinroll_gate_json_error(429, 'Too many failed attempts. Try again later.');
+
+        return;
+    }
+
+    $token = pinroll_extract_bearer($authorization);
+    if ($token === '' || !hash_equals($expectedHash, hash('sha256', $token))) {
+        pinroll_vendor_auth_failure($root);
+        pinroll_gate_json_error(401, 'Invalid token.');
+
+        return;
+    }
+
+    pinroll_vendor_auth_reset($root);
+
+    $force = !empty($input['force']);
+    if (!$force && is_file($root . '/index.php')) {
+        pinroll_gate_json_error(409, 'Platform already present (index.php). Pass force=true to extract again.');
+
+        return;
+    }
+
+    if (!class_exists(ZipArchive::class)) {
+        pinroll_gate_json_error(500, 'ZipArchive is not available on the host PHP.');
+
+        return;
+    }
+
+    $zipPath = $root . '/platform.zip';
+    if (!is_file($zipPath) || !is_readable($zipPath)) {
+        pinroll_gate_json_error(404, 'platform.zip not found next to pingate.php.');
+
+        return;
+    }
+
+    $zipReal = realpath($zipPath);
+    if ($zipReal === false || !str_starts_with(str_replace('\\', '/', $zipReal), $root . '/')) {
+        pinroll_gate_json_error(400, 'Refusing zip outside platform root.');
+
+        return;
+    }
+
+    $maxZipBytes = 400 * 1024 * 1024;
+    $zipSize = (int) filesize($zipReal);
+    if ($zipSize < 1 || $zipSize > $maxZipBytes) {
+        pinroll_gate_json_error(400, 'platform.zip size is invalid or too large.');
+
+        return;
+    }
+
+    $zip = new ZipArchive();
+    if ($zip->open($zipReal) !== true) {
+        pinroll_gate_json_error(500, 'Unable to open platform.zip.');
+
+        return;
+    }
+
+    $inspect = pinroll_platform_zip_is_safe($zip, $root);
+    if ($inspect !== true) {
+        $zip->close();
+        pinroll_gate_json_error(400, is_string($inspect) ? $inspect : 'Unsafe platform.zip rejected.');
+
+        return;
+    }
+
+    $ok = pinroll_platform_zip_extract_safe($zip, $root);
+    $zip->close();
+
+    if ($ok !== true || !is_file($root . '/index.php') || !is_file($root . '/vendor/autoload.php')) {
+        pinroll_gate_json_error(500, is_string($ok) ? $ok : 'Platform extract failed or index.php / vendor/autoload.php missing.');
+
+        return;
+    }
+
+    $deletedZip = @unlink($zipReal);
+    pinroll_refresh_pinker_overrides($root);
+
+    header('Content-Type: application/json');
+    header('X-Content-Type-Options: nosniff');
+    echo json_encode([
+        'success' => true,
+        'data' => [
+            'platform' => true,
+            'zip' => 'platform.zip',
+            'deleted_zip' => (bool) $deletedZip,
+            'index' => true,
+            'autoload' => true,
+        ],
+    ], JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * @return true|string
+ */
+function pinroll_platform_zip_is_safe(ZipArchive $zip, string $root)
+{
+    $maxFiles = 80000;
+    $maxUncompressed = 1500 * 1024 * 1024;
+    $count = $zip->numFiles;
+
+    if ($count < 1 || $count > $maxFiles) {
+        return 'platform.zip has an invalid entry count.';
+    }
+
+    $names = [];
+    $totalUncompressed = 0;
+
+    for ($i = 0; $i < $count; $i++) {
+        $stat = $zip->statIndex($i);
+        if (!is_array($stat)) {
+            return 'Unable to read zip entry metadata.';
+        }
+
+        $name = str_replace('\\', '/', (string) ($stat['name'] ?? ''));
+        if ($name === '' || str_contains($name, "\0")) {
+            return 'Zip entry name is invalid.';
+        }
+
+        if ($name[0] === '/' || preg_match('#^[a-zA-Z]:#', $name) === 1 || str_contains($name, '..')) {
+            return 'Zip entry path traversal rejected: ' . $name;
+        }
+
+        $attrs = (int) ($stat['external_attr'] ?? 0);
+        $type = ($attrs >> 16) & 0xF000;
+        if ($type === 0xA000) {
+            return 'Symlink entries are not allowed in platform.zip.';
+        }
+
+        $size = (int) ($stat['size'] ?? 0);
+        if ($size < 0) {
+            return 'Invalid uncompressed size in zip.';
+        }
+
+        $totalUncompressed += $size;
+        if ($totalUncompressed > $maxUncompressed) {
+            return 'platform.zip uncompressed size exceeds limit.';
+        }
+
+        $names[] = $name;
+    }
+
+    $prefix = pinroll_platform_zip_prefix($names);
+    $hasIndex = false;
+    $hasAutoload = false;
+    foreach ($names as $name) {
+        $relative = $prefix === '' ? $name : (str_starts_with($name, $prefix) ? substr($name, strlen($prefix)) : $name);
+        $relative = ltrim(str_replace('\\', '/', (string) $relative), '/');
+        if ($relative === 'index.php') {
+            $hasIndex = true;
+        }
+        if ($relative === 'vendor/autoload.php') {
+            $hasAutoload = true;
+        }
+    }
+
+    unset($root);
+
+    if (!$hasIndex || !$hasAutoload) {
+        return 'platform.zip must include index.php and vendor/autoload.php.';
+    }
+
+    return true;
+}
+
+/**
+ * @param list<string> $entries
+ */
+function pinroll_platform_zip_prefix(array $entries): string
+{
+    $files = [];
+    foreach ($entries as $entry) {
+        $entry = ltrim(str_replace('\\', '/', $entry), '/');
+        if ($entry === '' || str_ends_with($entry, '/')) {
+            continue;
+        }
+        $files[] = $entry;
+    }
+
+    if ($files === []) {
+        return '';
+    }
+
+    if (in_array('index.php', $files, true) || in_array('storage/BUILD.json', $files, true)) {
+        return '';
+    }
+
+    $slash = strpos($files[0], '/');
+    if ($slash === false) {
+        return '';
+    }
+
+    $root = substr($files[0], 0, $slash + 1);
+    foreach ($files as $file) {
+        if (!str_starts_with($file, $root)) {
+            return '';
+        }
+    }
+
+    if (!in_array($root . 'index.php', $files, true) && !in_array($root . 'storage/BUILD.json', $files, true)) {
+        return '';
+    }
+
+    return $root;
+}
+
+function pinroll_platform_should_preserve(string $relative): bool
+{
+    $relative = ltrim(str_replace('\\', '/', $relative), '/');
+    if ($relative === '' || $relative === 'storage/BUILD.json') {
+        return false;
+    }
+
+    if ($relative === '.env' || str_starts_with($relative, '.env.')) {
+        return true;
+    }
+
+    $prefixes = [
+        'storage',
+        'uploads',
+        'downloads',
+        'pinker',
+        'pinx',
+        'pinroll',
+        '.pinoox',
+        'packages',
+        'pincore',
+        'pingate.php',
+        '.git',
+        '.github',
+        'platform/app-router.config.php',
+        'platform/domain.config.php',
+        'platform/apps.config.php',
+    ];
+
+    foreach ($prefixes as $prefix) {
+        if ($relative === $prefix || str_starts_with($relative, $prefix . '/')) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * @return true|string
+ */
+function pinroll_platform_zip_extract_safe(ZipArchive $zip, string $root)
+{
+    $root = rtrim(str_replace('\\', '/', $root), '/');
+    $count = $zip->numFiles;
+    $names = [];
+    for ($i = 0; $i < $count; $i++) {
+        $name = $zip->getNameIndex($i);
+        if (is_string($name) && $name !== '') {
+            $names[] = str_replace('\\', '/', $name);
+        }
+    }
+    $prefix = pinroll_platform_zip_prefix($names);
+
+    for ($i = 0; $i < $count; $i++) {
+        $stat = $zip->statIndex($i);
+        if (!is_array($stat)) {
+            return 'Unable to read zip entry during extract.';
+        }
+
+        $name = str_replace('\\', '/', (string) ($stat['name'] ?? ''));
+        $relative = $prefix === '' ? $name : (str_starts_with($name, $prefix) ? substr($name, strlen($prefix)) : $name);
+        $relative = ltrim(str_replace('\\', '/', (string) $relative), '/');
+
+        if ($relative === '' || pinroll_platform_should_preserve($relative)) {
+            continue;
+        }
+
+        if (str_ends_with($relative, '/')) {
+            $dir = $root . '/' . rtrim($relative, '/');
+            if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+                return 'Unable to create directory for zip entry.';
+            }
+
+            continue;
+        }
+
+        $target = $root . '/' . $relative;
+        $normalizedTarget = str_replace('\\', '/', $target);
+        if ($normalizedTarget !== $root && !str_starts_with($normalizedTarget, $root . '/')) {
+            return 'Refusing extract outside platform root: ' . $relative;
+        }
+
+        $targetDir = dirname($target);
+        if (!is_dir($targetDir) && !@mkdir($targetDir, 0755, true) && !is_dir($targetDir)) {
+            return 'Unable to create parent directory for zip entry.';
+        }
+
+        $stream = $zip->getStream($name);
+        if ($stream === false) {
+            return 'Unable to read zip stream for ' . $name;
+        }
+
+        $out = @fopen($target, 'wb');
+        if ($out === false) {
+            fclose($stream);
+
+            return 'Unable to write extracted file.';
+        }
+
+        stream_copy_to_stream($stream, $out);
+        fclose($stream);
+        fclose($out);
+    }
+
+    return true;
 }
 
 function pinroll_extract_bearer(?string $authorization): string
@@ -613,12 +962,12 @@ function pinroll_assert_gate_auth(string $root, array $gateConfig, ?string $auth
 {
     $hash = pinroll_gate_token_hash($root, $gateConfig);
     if ($hash === '' || !preg_match('/^[a-f0-9]{64}$/', $hash)) {
-        throw new RuntimeException('PinGate token_hash missing or invalid. Re-run pinroll:gate.');
+        throw new RuntimeException('PinGate token_hash missing or invalid. Re-run pinroll:gate.', 503);
     }
 
     $token = pinroll_extract_bearer($authorization);
     if ($token === '' || !hash_equals($hash, hash('sha256', $token))) {
-        throw new RuntimeException('Invalid token.');
+        throw new RuntimeException('Invalid token.', 401);
     }
 }
 
@@ -660,6 +1009,8 @@ function pinroll_pincore_gate_handle(
         $method === 'POST' && $path === 'rollback' => pinroll_pincore_install($root, $incoming, $input + ['force' => true]),
         $method === 'POST' && $path === 'cleanup' => pinroll_pincore_cleanup($root, $incoming, $input),
         $method === 'GET' && $path === 'history' => ['history' => []],
+        $method === 'POST' && $path === 'setup' => pinroll_pincore_setup($root, $input),
+        $method === 'POST' && $path === 'check-db' => pinroll_pincore_check_db($root, $input),
         default => throw new RuntimeException('Unknown PinGate route: ' . $path),
     };
 }
@@ -843,4 +1194,205 @@ function pinroll_pincore_cleanup(string $root, string $incoming, array $input): 
 
     return ['keep' => $keep, 'files_deleted' => $deleted];
 }
+
+/**
+ * @param array<string, mixed> $input
+ * @return array<string, mixed>
+ */
+function pinroll_pincore_setup(string $root, array $input): array
+{
+    pinroll_boot_platform_for_setup($root);
+
+    if (class_exists(\Pinoox\Pinroll\PinGate\HostSetup::class)) {
+        $db = is_array($input['db'] ?? null) ? $input['db'] : [];
+        $user = is_array($input['user'] ?? null) ? $input['user'] : [];
+        $lang = isset($input['lang']) ? (string) $input['lang'] : null;
+
+        return \Pinoox\Pinroll\PinGate\HostSetup::run($root, $db, $user, $lang, !empty($input['force']));
+    }
+
+    if (!class_exists(\App\com_pinoox_installer\Component\SetupService::class)) {
+        throw new RuntimeException('Installer app is missing on the host. Re-run pinroll:provision.');
+    }
+
+    if (empty($input['force']) && pinroll_installer_is_disabled($root)) {
+        throw new RuntimeException('This site is already installed (installer is disabled). Pass force=true to re-run setup.');
+    }
+
+    $db = is_array($input['db'] ?? null) ? $input['db'] : [];
+    $user = is_array($input['user'] ?? null) ? $input['user'] : [];
+    $lang = isset($input['lang']) ? (string) $input['lang'] : 'en';
+    $errors = pinroll_validate_provision_payload($db, $user, $lang);
+    if ($errors !== []) {
+        throw new RuntimeException(implode("\n", $errors));
+    }
+
+    \App\com_pinoox_installer\Component\SetupService::make()->run($db, $user, $lang);
+
+    $htaccess = false;
+    try {
+        (new \App\com_pinoox_installer\Component\HtaccessManager())->create();
+        $htaccess = true;
+    } catch (Throwable) {
+    }
+
+    return [
+        'installed' => true,
+        'lang' => $lang,
+        'htaccess' => $htaccess,
+    ];
+}
+
+/**
+ * @param array<string, mixed> $input
+ * @return array<string, mixed>
+ */
+function pinroll_pincore_check_db(string $root, array $input): array
+{
+    pinroll_boot_platform_for_setup($root);
+
+    if (class_exists(\Pinoox\Pinroll\PinGate\HostSetup::class)) {
+        $db = is_array($input['db'] ?? null) ? $input['db'] : [];
+
+        return \Pinoox\Pinroll\PinGate\HostSetup::checkDb($root, $db);
+    }
+
+    if (!class_exists(\App\com_pinoox_installer\Component\InstallerDatabase::class)) {
+        throw new RuntimeException('Installer database helper is missing on the host.');
+    }
+
+    $db = is_array($input['db'] ?? null) ? $input['db'] : [];
+    $ok = \App\com_pinoox_installer\Component\InstallerDatabase::testConnection($db);
+
+    return [
+        'ok' => $ok,
+        'message' => $ok ? 'Database connection succeeded.' : 'Database connection failed from this host.',
+    ];
+}
+
+function pinroll_boot_platform_for_setup(string $root): void
+{
+    if (class_exists(\Pinoox\Pinroll\Bridge\PlatformBootstrap::class)) {
+        \Pinoox\Pinroll\Bridge\PlatformBootstrap::ensure($root);
+
+        return;
+    }
+
+    $root = rtrim(str_replace('\\', '/', $root), '/');
+    $launcher = $root . '/platform/launcher';
+    $corePathFile = $launcher . '/core-path.php';
+    if (!is_file($corePathFile)) {
+        throw new RuntimeException('Missing platform/launcher on host. Upload a complete Pinoox platform first.');
+    }
+
+    if (!defined('PINOOX_BASE_PATH')) {
+        define('PINOOX_BASE_PATH', $root);
+    }
+
+    require_once $corePathFile;
+    if (!defined('PINOOX_CORE_PATH')) {
+        throw new RuntimeException('PINOOX_CORE_PATH could not be resolved.');
+    }
+
+    $baseFunctions = rtrim((string) PINOOX_CORE_PATH, '/') . '/functions/base.php';
+    if (is_file($baseFunctions)) {
+        require_once $baseFunctions;
+    }
+
+    $autoload = $root . '/vendor/autoload.php';
+    if (is_file($autoload)) {
+        $loader = require $autoload;
+        $coreAutoload = $launcher . '/core-autoload.php';
+        if ($loader instanceof Composer\Autoload\ClassLoader && is_file($coreAutoload)) {
+            require_once $coreAutoload;
+            if (function_exists('pinoox_register_core_autoload')) {
+                pinoox_register_core_autoload($loader, (string) PINOOX_BASE_PATH, (string) PINOOX_CORE_PATH);
+            }
+        }
+        if (class_exists(\Pinoox\Component\Kernel\Loader::class) && $loader instanceof Composer\Autoload\ClassLoader) {
+            \Pinoox\Component\Kernel\Loader::set($loader, $root);
+        }
+    }
+
+    if (class_exists(\Pinoox\Portal\App\AppEngine::class)) {
+        \Pinoox\Portal\App\AppEngine::__rebuild();
+    }
+}
+
+function pinroll_installer_is_disabled(string $root): bool
+{
+    try {
+        if (class_exists(\Pinoox\Portal\App\AppEngine::class)
+            && \Pinoox\Portal\App\AppEngine::exists('com_pinoox_installer')
+        ) {
+            $config = \Pinoox\Portal\App\AppEngine::config('com_pinoox_installer');
+            if (is_object($config) && method_exists($config, 'get')) {
+                return $config->get('enable') === false;
+            }
+        }
+    } catch (Throwable) {
+    }
+
+    $root = rtrim(str_replace('\\', '/', $root), '/');
+    foreach ([
+        $root . '/pinker/state/apps/com_pinoox_installer/app.php',
+        $root . '/apps/com_pinoox_installer/pinker/app.php',
+    ] as $file) {
+        if (!is_file($file)) {
+            continue;
+        }
+        $data = include $file;
+        if (is_array($data) && array_key_exists('enable', $data) && $data['enable'] === false) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * @param array<string, mixed> $db
+ * @param array<string, mixed> $user
+ * @return list<string>
+ */
+function pinroll_validate_provision_payload(array $db, array $user, string $lang): array
+{
+    $errors = [];
+    if (trim((string) ($db['host'] ?? '')) === '') {
+        $errors[] = 'Database host is required.';
+    }
+    if (trim((string) ($db['database'] ?? '')) === '') {
+        $errors[] = 'Database name is required.';
+    }
+    if (trim((string) ($db['username'] ?? '')) === '') {
+        $errors[] = 'Database username is required.';
+    }
+    $connection = strtolower(trim((string) ($db['connection'] ?? 'mysql')));
+    if ($connection !== '' && !in_array($connection, ['mysql', 'mariadb', 'pgsql', 'sqlsrv'], true)) {
+        $errors[] = 'Database connection must be mysql, mariadb, pgsql, or sqlsrv.';
+    }
+    if (mb_strlen(trim((string) ($user['fname'] ?? ''))) < 3) {
+        $errors[] = 'Admin first name must be at least 3 characters.';
+    }
+    if (mb_strlen(trim((string) ($user['lname'] ?? ''))) < 3) {
+        $errors[] = 'Admin last name must be at least 3 characters.';
+    }
+    $email = trim((string) ($user['email'] ?? ''));
+    if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+        $errors[] = 'Admin email is required and must be valid.';
+    }
+    $username = trim((string) ($user['username'] ?? ''));
+    if ($username === '' || mb_strlen($username) < 3 || preg_match('/^[A-Za-z0-9_-]+$/', $username) !== 1) {
+        $errors[] = 'Admin username must be at least 3 ascii letters, numbers, dashes or underscores.';
+    }
+    if (mb_strlen((string) ($user['password'] ?? '')) < 6) {
+        $errors[] = 'Admin password must be at least 6 characters.';
+    }
+    if (!in_array($lang, ['en', 'fa'], true)) {
+        $errors[] = 'Language must be en or fa.';
+    }
+
+    return $errors;
+}
+
 

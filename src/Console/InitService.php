@@ -119,6 +119,22 @@ final class InitService
                 'PINROLL_HOST' => '',
                 'PINROLL_USER' => '',
                 'PINROLL_PASSWORD' => '',
+                'PINROLL_LANG' => 'en',
+                'PINROLL_DB_HOST' => 'localhost',
+                'PINROLL_DB_DATABASE' => 'pinoox',
+                'PINROLL_DB_USERNAME' => '',
+                'PINROLL_DB_PASSWORD' => '',
+                'PINROLL_DB_CONNECTION' => 'mysql',
+                'PINROLL_DB_PORT' => '3306',
+                'PINROLL_DB_PREFIX' => 'pin_',
+                'PINROLL_DB_TIMEZONE' => '+03:30',
+                'PINROLL_ADMIN_FNAME' => '',
+                'PINROLL_ADMIN_LNAME' => '',
+                'PINROLL_ADMIN_EMAIL' => '',
+                'PINROLL_ADMIN_USERNAME' => '',
+                'PINROLL_ADMIN_PASSWORD' => '',
+                'PINROLL_BUILD_EXCLUDE' => '',
+                'PINROLL_BUILD_INCLUDE' => '',
             ], $keys);
         }
 

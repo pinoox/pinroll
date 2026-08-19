@@ -28,7 +28,11 @@ test('config writer renders env backed fields via template', function () {
         ->toContain("env('PINROLL_PRODUCTION_URL', 'https://pinoox.com/pingate.php?route=')")
         ->toContain("env('PINROLL_PRODUCTION_TOKEN', '')")
         ->toContain("'gate' => [")
-        ->toContain("'via' => 'ftp'");
+        ->toContain("'via' => 'ftp'")
+        ->toContain("env('PINROLL_DB_HOST', 'localhost')")
+        ->toContain("env('PINROLL_ADMIN_EMAIL', '')")
+        ->toContain("'provision' => [")
+        ->toContain("'build' => [");
 });
 
 test('config writer normalizes loaded target values', function () {

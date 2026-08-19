@@ -76,6 +76,36 @@ final class HostEnv
             $host['ftp'] = $ftp;
         }
 
+        $provision = is_array($host['provision'] ?? null) ? $host['provision'] : [];
+        $db = is_array($provision['db'] ?? null) ? $provision['db'] : [];
+        $user = is_array($provision['user'] ?? null) ? $provision['user'] : [];
+        foreach (['HOST' => 'host', 'DATABASE' => 'database', 'USERNAME' => 'username', 'PASSWORD' => 'password', 'CONNECTION' => 'connection', 'PORT' => 'port', 'PREFIX' => 'prefix', 'TIMEZONE' => 'timezone'] as $env => $field) {
+            $value = self::read($name, 'DB_' . $env);
+            if ($value !== null) {
+                $db[$field] = $value;
+            }
+        }
+        foreach (['FNAME' => 'fname', 'LNAME' => 'lname', 'EMAIL' => 'email', 'USERNAME' => 'username', 'PASSWORD' => 'password'] as $env => $field) {
+            $value = self::read($name, 'ADMIN_' . $env);
+            if ($value !== null) {
+                $user[$field] = $value;
+            }
+        }
+        $lang = self::read($name, 'LANG');
+        if ($lang !== null) {
+            $host['lang'] = $lang;
+            $provision['lang'] = $lang;
+        }
+        if ($db !== []) {
+            $provision['db'] = $db;
+        }
+        if ($user !== []) {
+            $provision['user'] = $user;
+        }
+        if ($provision !== []) {
+            $host['provision'] = $provision;
+        }
+
         return $host;
     }
 

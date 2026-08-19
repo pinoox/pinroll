@@ -42,6 +42,7 @@ final class PinrollInput
         $options = array_filter([
             'via' => ($via = (string) ($input->getOption('via') ?: '')) !== '' ? $via : null,
             'all' => $input->getOption('all') ? true : null,
+            'full' => $input->hasOption('full') && $input->getOption('full') ? true : null,
             'vendor' => $input->getOption('vendor') ? true : null,
             'theme' => $input->getOption('theme') ? true : null,
             'platform' => $input->hasOption('platform') && $input->getOption('platform') ? true : null,

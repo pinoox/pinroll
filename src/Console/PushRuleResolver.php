@@ -119,6 +119,10 @@ final class PushRuleResolver
      */
     private static function partsFromCli(array $cli, array $rules, string $ruleName): array
     {
+        if (!empty($cli['full'])) {
+            return ['platform', 'app'];
+        }
+
         if (!empty($cli['all'])) {
             return $rules['all'] ?? ['app', 'vendor', 'theme', 'platform'];
         }

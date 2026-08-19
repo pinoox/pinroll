@@ -64,10 +64,16 @@ final class HostConfig
     {
         $loaded = self::normalizeLoaded($loaded);
 
-        foreach (['keep', 'store', 'auto_clean'] as $key) {
+        foreach (['keep', 'store', 'auto_clean', 'lang'] as $key) {
             if (!array_key_exists($key, $host) && array_key_exists($key, $loaded)) {
                 $host[$key] = $loaded[$key];
             }
+        }
+
+        if (!isset($host['provision']) && isset($loaded['provision']) && is_array($loaded['provision'])) {
+            $host['provision'] = $loaded['provision'];
+        } elseif (isset($host['provision'], $loaded['provision']) && is_array($host['provision']) && is_array($loaded['provision'])) {
+            $host['provision'] = array_replace_recursive($loaded['provision'], $host['provision']);
         }
 
         if (!isset($host['deploy_path']) && isset($host['dir'])) {

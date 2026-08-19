@@ -28,6 +28,13 @@ final class DeployAppSelector
             return $fromCli;
         }
 
+        if (!empty($cli['full'])) {
+            $discovered = ProjectPackages::list($projectRoot);
+            if ($discovered !== []) {
+                return $discovered;
+            }
+        }
+
         $fromHost = self::fromHost($rawHost);
         if ($fromHost !== []) {
             return $fromHost;

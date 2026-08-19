@@ -1,6 +1,6 @@
 # Pinroll — Release Rollout Engine
 
-**Pinroll** (`pinoox/pinroll`) **1.2.0** — atomic release rollout, rollback, and PinGate delivery for Pinoox.
+**Pinroll** (`pinoox/pinroll`) **1.3.0** — atomic release rollout, rollback, PinGate delivery, and blank-host provision for Pinoox.
 
 | Concept | Meaning |
 |---------|---------|
@@ -33,20 +33,20 @@ Put Pinroll in `require` only if you want PinGate to use Pinroll classes on the 
 
 ```bash
 php pinoox pinroll:init
-# fill PINROLL_* credentials in .env
+# fill PINROLL_* credentials in .env (and PINROLL_DB_* / PINROLL_ADMIN_* for a blank host)
+php pinoox pinroll:provision          # first install on empty FTP
+# later:
 php pinoox pinroll:connect
 php pinoox pinroll:apps
-php pinoox pinroll:gate -n
-php pinoox pinroll:vendor --push -n   # production vendor via PlatformComposer + PinGate
-php pinoox pinroll:check
-php pinoox pinroll:deploy
+php pinoox pinroll:deploy --full      # platform + every installed app
 ```
 
 | Step | Command | What it does |
 |------|---------|--------------|
 | 1 | `pinroll:init` | Scaffold `.pinoox/pinroll.config.php` |
 | 2 | Edit `.env` | Set `PINROLL_*` FTP/SSH keys |
-| 3 | `pinroll:connect` | Deploy path, site URL, upload PinGate (`--reset` to re-run) |
+| 3 | `pinroll:provision` | **Blank host:** PinGate + platform.zip + installer setup |
+| 3b | `pinroll:connect` | Existing site: deploy path, site URL, upload PinGate |
 | 4 | `pinroll:apps` | Set default packages for the host |
 | 5 | `pinroll:vendor --push` | Build production `vendor.zip`, upload, extract on host |
 | 6 | `pinroll:check` | Verify transport + PinGate |
@@ -70,10 +70,12 @@ If `pinroll:check` reports **Not PinGate JSON**, upload `pingate.php` next to `i
 
 ```bash
 php pinoox pinroll:init
+php pinoox pinroll:provision
 php pinoox pinroll:connect
 php pinoox pinroll:apps
 php pinoox pinroll:push
 php pinoox pinroll:deploy
+php pinoox pinroll:deploy --full
 php pinoox pinroll:deploy --app=com_pinoox_developer
 php pinoox pinroll:deploy --theme
 php pinoox pinroll:deploy --platform
@@ -90,11 +92,13 @@ php pinoox pinroll:pull --server=https://releases.example.com
 ```
 
 - `pinroll:init` — scaffold `.pinoox/pinroll.config.php` + `.env` key stubs (legacy `pinroll/pinroll.config.php` still loads)
+- `pinroll:provision` — blank-host install: PinGate + `platform.zip` extract + installer setup (`--setup-only` to retry setup)
 - `pinroll:connect` — configure host + upload PinGate; verifies if already set (`--reset` to redo)
 - `pinroll:apps` — set `hosts.*.apps` (interactive or `--apps=`)
 - `pinroll:check` — verify host connectivity before push
 - `pinroll:push` — build and upload only (no install)
 - `pinroll:deploy` — push + install via PinGate (go live); runs `fe:build` before `pinx:build`
+- `pinroll:deploy --full` — platform zip (`pinx:update`) plus every installed/discovered app
 - `pinroll:deploy --platform` — `pinx:build platform` then `pinx:update` on the host
 - `pinroll:deploy --theme` — rebuild theme assets (`fe:build`) then include in the app `.pinx` / FTP dist
 - `pinroll:install` — install a staged release (`pinroll:apply` is a deprecated alias)

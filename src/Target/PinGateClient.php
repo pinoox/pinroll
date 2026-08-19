@@ -113,7 +113,7 @@ final class PinGateClient
     public static function extractVendor(string $gateUrlBase, string $token, array $options = []): array
     {
         $url = rtrim($gateUrlBase, '/') . '/vendor';
-        $response = self::request('POST', $url, $token, $options);
+        $response = self::request('POST', $url, $token, $options, 180);
 
         if (!($response['success'] ?? false)) {
             throw new PinrollException((string) ($response['error'] ?? 'PinGate vendor extract failed.'));
@@ -122,6 +122,71 @@ final class PinGateClient
         $data = $response['data'] ?? [];
         if (!is_array($data)) {
             throw new PinrollException('PinGate vendor extract returned invalid response.');
+        }
+
+        return $data;
+    }
+
+    /**
+     * Extract a previously uploaded platform.zip on the host (POST /bootstrap).
+     *
+     * @param array{force?: bool} $options
+     * @return array<string, mixed>
+     */
+    public static function bootstrap(string $gateUrlBase, string $token, array $options = []): array
+    {
+        $url = rtrim($gateUrlBase, '/') . '/bootstrap';
+        $response = self::request('POST', $url, $token, $options, 600);
+
+        if (!($response['success'] ?? false)) {
+            throw new PinrollException((string) ($response['error'] ?? 'PinGate platform bootstrap failed.'));
+        }
+
+        $data = $response['data'] ?? [];
+        if (!is_array($data)) {
+            throw new PinrollException('PinGate bootstrap returned invalid response.');
+        }
+
+        return $data;
+    }
+
+    /**
+     * @param array<string, mixed> $payload db/user/lang/force
+     * @return array<string, mixed>
+     */
+    public static function setup(string $gateUrlBase, string $token, array $payload): array
+    {
+        $url = rtrim($gateUrlBase, '/') . '/setup';
+        $response = self::request('POST', $url, $token, $payload, 600);
+
+        if (!($response['success'] ?? false)) {
+            throw new PinrollException((string) ($response['error'] ?? 'PinGate setup failed.'));
+        }
+
+        $data = $response['data'] ?? [];
+        if (!is_array($data)) {
+            throw new PinrollException('PinGate setup returned invalid response.');
+        }
+
+        return $data;
+    }
+
+    /**
+     * @param array<string, mixed> $db
+     * @return array<string, mixed>
+     */
+    public static function checkDb(string $gateUrlBase, string $token, array $db): array
+    {
+        $url = rtrim($gateUrlBase, '/') . '/check-db';
+        $response = self::request('POST', $url, $token, ['db' => $db], 60);
+
+        if (!($response['success'] ?? false)) {
+            throw new PinrollException((string) ($response['error'] ?? 'PinGate database check failed.'));
+        }
+
+        $data = $response['data'] ?? [];
+        if (!is_array($data)) {
+            throw new PinrollException('PinGate check-db returned invalid response.');
         }
 
         return $data;
@@ -152,7 +217,7 @@ final class PinGateClient
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
-    private static function request(string $method, string $url, string $token, array $payload = []): array
+    private static function request(string $method, string $url, string $token, array $payload = [], int $timeout = 180): array
     {
         $headers = [
             'Accept: application/json',
@@ -168,7 +233,7 @@ final class PinGateClient
                 'method' => $method,
                 'header' => implode("\r\n", $headers),
                 'content' => $method === 'POST' ? json_encode($payload, JSON_THROW_ON_ERROR) : '',
-                'timeout' => 180,
+                'timeout' => $timeout > 0 ? $timeout : 180,
                 'ignore_errors' => true,
             ],
         ]);
