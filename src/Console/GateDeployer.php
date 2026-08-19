@@ -11,7 +11,7 @@ final class GateDeployer
      * @param array<string, mixed> $resolvedHost
      * @return array{remote_root: string, files: int}
      */
-    public function upload(array $resolvedHost, string $localEntry, string $localGateDir): array
+    public function upload(array $resolvedHost, string $localEntry, ?string $localGateDir = null): array
     {
         $transport = (string) ($resolvedHost['transport'] ?? 'ftp');
 

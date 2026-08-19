@@ -91,6 +91,13 @@ final class PlatformProfile
         $packages = [];
         $appsDir = $root . '/apps';
 
+        if (is_file($root . '/app.php')) {
+            $rootPackage = self::packageFromAppFile($root . '/app.php');
+            if ($rootPackage !== null) {
+                $packages[] = $rootPackage;
+            }
+        }
+
         if (is_dir($appsDir)) {
             foreach (scandir($appsDir) ?: [] as $entry) {
                 if ($entry === '.' || $entry === '..' || !str_starts_with($entry, 'com_')) {
@@ -119,6 +126,22 @@ final class PlatformProfile
         sort($packages);
 
         return $packages;
+    }
+
+    private static function packageFromAppFile(string $appFile): ?string
+    {
+        if (!is_file($appFile)) {
+            return null;
+        }
+
+        /** @var array<string, mixed> $config */
+        $config = require $appFile;
+        $package = trim((string) ($config['package'] ?? ''));
+        if ($package === '' || ($config['enable'] ?? true) === false) {
+            return null;
+        }
+
+        return $package;
     }
 
     /**

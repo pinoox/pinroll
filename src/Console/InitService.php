@@ -10,7 +10,7 @@ use Pinoox\Pinroll\Support\ProjectPaths;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * Non-interactive scaffold: pinroll/ config + .env key stubs.
+ * Non-interactive scaffold: .pinoox/pinroll.config.php + .env key stubs.
  * Connection / PinGate upload is pinroll:connect.
  */
 final class InitService
@@ -98,13 +98,31 @@ final class InitService
     {
         $targetName = self::normalizeHostName($targetName);
 
-        return [
+        $keys = [
             ConfigWriter::envKeyFor($targetName, 'host', 'ftp') => '',
             ConfigWriter::envKeyFor($targetName, 'user', 'ftp') => '',
             ConfigWriter::envKeyFor($targetName, 'password', 'ftp') => '',
             ConfigWriter::envKeyFor($targetName, 'url', 'pinion') => '',
             ConfigWriter::envKeyFor($targetName, 'token', 'pinion') => '',
         ];
+
+        if (in_array($targetName, ['production', 'prod'], true)) {
+            $keys = array_merge([
+                'PINROLL_VIA' => 'ftp',
+                'PINROLL_PATH' => 'public_html',
+                'PINROLL_KEEP' => '3',
+                'PINROLL_STORE' => 'remote',
+                'PINROLL_AUTO_CLEAN' => 'true',
+                'PINROLL_APPS' => '',
+                'PINROLL_URL' => '',
+                'PINROLL_TOKEN' => '',
+                'PINROLL_HOST' => '',
+                'PINROLL_USER' => '',
+                'PINROLL_PASSWORD' => '',
+            ], $keys);
+        }
+
+        return $keys;
     }
 
     /**

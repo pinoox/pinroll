@@ -143,17 +143,17 @@ final class HostDir
 
     public static function localEntryPath(): string
     {
-        return 'pinroll/' . self::GATE_ENTRY;
+        return 'storage/pinroll/' . self::GATE_ENTRY;
     }
 
     public static function localGateDir(): string
     {
-        return 'pinroll/' . self::GATE_DIR;
+        return 'storage/pinroll/gate-build';
     }
 
     public static function localHtaccessSnippet(): string
     {
-        return 'pinroll/htaccess.snippet';
+        return 'storage/pinroll/htaccess.snippet';
     }
 
     public static function gateUrlFromDomain(string $domain, ?string $hostDir = null): string
@@ -300,8 +300,8 @@ final class HostDir
 
         return [
             '1. Deploy full Pinoox platform to ' . $guideDeploy . ' (vendor/, apps/, composer install — first time only).',
-            '2. Run php pinoox pinroll:gate (FTP uploads pingate.php + gate/; or -z for a zip).',
-            '3. Set gate { url, token } in pinroll.config.php / .env, then run pinroll:check.',
+            '2. Run php pinoox pinroll:gate (FTP uploads pingate.php next to index.php; or -z for a zip).',
+            '3. Set PINROLL_*_URL / PINROLL_*_TOKEN in .env, then run pinroll:check.',
         ];
     }
 }

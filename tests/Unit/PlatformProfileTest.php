@@ -59,6 +59,27 @@ test('builtin bundle builds platform-full from discovered apps', function () {
     $fixture->cleanup();
 });
 
+test('platform profile detects pinx-root from app.php', function () {
+    $fixture = new ProjectFixture();
+    file_put_contents(
+        $fixture->root . '/app.php',
+        "<?php\nreturn ['package' => 'com_pinx_app', 'enable' => true];\n",
+    );
+
+    $profile = PlatformProfile::fromRoot($fixture->root);
+
+    expect($profile->layout())->toBe(PlatformProfile::LAYOUT_PINX_ROOT)
+        ->and($profile->packages())->toBe(['com_pinx_app']);
+
+    $paths = new NativePathResolver($fixture->root);
+    $config = new Config($paths, ['storage_path' => $fixture->root . '/storage']);
+    $bundle = ReleaseBundle::resolveAuto($config, $paths);
+
+    expect($bundle->name())->toBe('pinx-root');
+
+    $fixture->cleanup();
+});
+
 test('release bundle resolves without pinroll/bundles files', function () {
     $fixture = new ProjectFixture();
     $package = 'com_test_app';

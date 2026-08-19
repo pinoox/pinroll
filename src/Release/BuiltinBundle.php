@@ -18,6 +18,9 @@ final class BuiltinBundle
             'single-app', 'app' => $package !== null && $package !== ''
                 ? self::forApp($package)
                 : null,
+            'theme' => $package !== null && $package !== ''
+                ? self::forTheme($package)
+                : null,
             'platform-core', 'pincore', 'core' => self::platformCore($root),
             'platform-full', 'platform', 'full' => self::platformFull($root),
             'test-empty', 'test', 'empty' => self::testEmpty(),
@@ -87,7 +90,34 @@ final class BuiltinBundle
             'name' => 'pinx-root',
             'scope' => 'app',
             'build' => [
+                ['type' => 'frontend', 'command' => 'fe:build --no-ansi'],
                 ['type' => 'app', 'command' => 'pinx:build --yes --no-ansi'],
+            ],
+            'depends_check' => true,
+        ];
+    }
+
+    /**
+     * Theme assets via the same CLI as `php pinoox fe:build` / pinx:build.
+     *
+     * @return array<string, mixed>
+     */
+    public static function forTheme(string $package): array
+    {
+        return [
+            'name' => 'theme:' . $package,
+            'scope' => 'app',
+            'build' => [
+                [
+                    'type' => 'frontend',
+                    'package' => $package,
+                    'command' => 'fe:build {{package}} --no-ansi',
+                ],
+                [
+                    'type' => 'app',
+                    'package' => $package,
+                    'command' => 'pinx:build {{package}} --yes --no-ansi',
+                ],
             ],
             'depends_check' => true,
         ];

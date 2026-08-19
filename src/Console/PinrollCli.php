@@ -141,14 +141,13 @@ final class PinrollCli
             $io->writeln([
                 '  <fg=gray>Zip</>      <comment>' . self::escape(self::relPath($zip)) . '</comment>',
                 '  <fg=gray>Extract</> <comment>' . self::escape($extractTo) . '</comment>',
-                '  <fg=gray>Files</>   pingate.php + gate/ next to platform vendor/',
+                '  <fg=gray>Files</>   pingate.php next to platform vendor/',
             ]);
         } elseif (!empty($data['entry']) || !empty($data['gate_dir'])) {
             $io->section('Local files (no FTP upload)');
             $io->writeln([
-                '  <fg=gray>Entry</> <comment>pinroll/pingate.php</comment>',
-                '  <fg=gray>Gate</>  <comment>pinroll/gate/</comment>',
-                '  <fg=gray>Copy to</> <comment>' . self::escape($extractTo) . '</comment>',
+                '  <fg=gray>Entry</> <comment>storage/pinroll/pingate.php</comment>',
+                '  <fg=gray>Copy to</> <comment>' . self::escape($extractTo) . '</comment> as pingate.php',
                 '',
                 '  Or: <comment>php pinoox pinroll:gate ' . $target . ' -z</comment> for a zip',
             ]);

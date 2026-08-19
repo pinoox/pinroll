@@ -33,9 +33,24 @@ final class DeployAppSelector
             return $fromHost;
         }
 
+        $discovered = ProjectPackages::list($projectRoot);
+        if (count($discovered) === 1) {
+            return $discovered;
+        }
+
+        if ($projectRoot !== null && is_file(rtrim($projectRoot, '/') . '/app.php')) {
+            try {
+                $profile = \Pinoox\Pinroll\Release\PlatformProfile::fromRoot($projectRoot);
+                if ($profile->packages() !== []) {
+                    return $profile->packages();
+                }
+            } catch (\Throwable) {
+            }
+        }
+
         if (!$input->isInteractive()) {
             throw new PinrollException(
-                'No apps configured for this host. Run pinroll:apps, set hosts.{name}.apps in pinroll.config.php, '
+                'No apps configured for this host. Run pinroll:apps, set hosts.{name}.apps in .pinoox/pinroll.config.php, '
                 . 'or pass --app=com_package / --apps=com_a,com_b.',
             );
         }

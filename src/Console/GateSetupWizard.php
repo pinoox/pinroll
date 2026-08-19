@@ -197,7 +197,7 @@ final class GateSetupWizard
         if (!empty($gate['entry']) || !empty($gate['gate_dir'])) {
             $io->section('Copy PinGate to server');
             $io->listing([
-                'Copy pinroll/pingate.php and pinroll/gate/ to ' . $extractTo,
+                'Copy pingate.php to ' . $extractTo,
                 'Or re-run with FTP configured: php pinoox pinroll:gate',
             ]);
         }

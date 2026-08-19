@@ -24,6 +24,7 @@ final class PinGateExporter
      *     gate_dir: string,
      *     entry: string,
      *     config: string,
+     *     index: string,
      *     zip: string|null,
      *     dir: string
      * }
@@ -36,90 +37,91 @@ final class PinGateExporter
         bool $keepLocal = false,
         bool $withVendor = false,
     ): array {
+        unset($withVendor);
         $hostDir = HostDir::normalize($hostDir ?? (string) ($gateConfig['dir'] ?? $gateConfig['host_dir'] ?? $gateConfig['install'] ?? ''));
 
-        $pinrollDir = ProjectPaths::dir($this->paths);
-        $gateDir = ProjectPaths::gateDir($this->paths);
-
-        if (!is_dir($gateDir) && !mkdir($gateDir, 0755, true) && !is_dir($gateDir)) {
-            throw new PinrollException('Unable to create pinroll gate directory: ' . $gateDir);
+        $workDir = ProjectPaths::workDir($this->paths);
+        if (!is_dir($workDir) && !mkdir($workDir, 0755, true) && !is_dir($workDir)) {
+            throw new PinrollException('Unable to create Pinroll work directory: ' . $workDir);
         }
 
         $gateConfig['dir'] = $hostDir;
-        unset($gateConfig['host_dir'], $gateConfig['install']);
+        unset($gateConfig['host_dir'], $gateConfig['install'], $gateConfig['platform_root']);
 
-        $configPath = $gateDir . '/pingate.php';
-        file_put_contents($configPath, '<?php return ' . var_export($gateConfig, true) . ';' . "\n");
+        $entryPath = $workDir . '/' . HostDir::GATE_ENTRY;
+        $this->writeSingleEntry($entryPath, $gateConfig);
 
-        $indexPath = $this->copyTemplate('index.php', $gateDir . '/index.php');
-        $bootstrapPath = $this->copyTemplate('bootstrap.php', $gateDir . '/bootstrap.php');
-        $htaccessPath = $this->copyTemplate('gate.htaccess', $gateDir . '/.htaccess');
-
-        // Default: use platform vendor/ on the host (fast). Optional fallback only.
-        $vendorDir = $gateDir . '/vendor';
-        if ($withVendor) {
-            $this->bundleGateVendor($gateDir);
-        } elseif (is_dir($vendorDir)) {
-            PushProgress::arrow('Removing leftover gate/vendor (using platform vendor)…');
-            $this->removeDir($vendorDir);
-        }
-
-        $entryPath = $pinrollDir . '/' . HostDir::GATE_ENTRY;
-        $this->copyTemplate('entry.php', $entryPath);
-
-        $snippetPath = $pinrollDir . '/htaccess.snippet';
+        $snippetPath = $workDir . '/htaccess.snippet';
         file_put_contents($snippetPath, self::htaccessSnippetContent($hostDir));
 
         $zipPath = null;
         if ($zip) {
-            $directories = [];
-            if ($withVendor && is_dir($vendorDir)) {
-                $directories[$vendorDir] = HostDir::GATE_DIR . '/vendor';
-            }
-
             $zipPath = $this->createZip($target, [
                 $entryPath => HostDir::GATE_ENTRY,
-                $bootstrapPath => HostDir::GATE_DIR . '/bootstrap.php',
-                $indexPath => HostDir::GATE_DIR . '/index.php',
-                $configPath => HostDir::GATE_DIR . '/pingate.php',
-                $htaccessPath => HostDir::GATE_DIR . '/.htaccess',
                 $snippetPath => 'htaccess.snippet',
-            ], $directories);
+            ]);
         }
 
         if ($zip && !$keepLocal) {
-            $this->removeLocalDeployFiles($entryPath, $snippetPath, $gateDir);
+            $this->cleanupLocalArtifacts($entryPath, $snippetPath, null);
         }
 
         return [
-            'gate_dir' => $gateDir,
-            'index' => $indexPath,
+            'gate_dir' => $workDir,
+            'index' => $entryPath,
             'entry' => $entryPath,
-            'config' => $configPath,
+            'config' => $entryPath,
             'zip' => $zipPath,
             'dir' => $hostDir,
         ];
     }
 
+    /**
+     * @param array<string, mixed> $gateConfig
+     */
+    private function writeSingleEntry(string $destination, array $gateConfig): void
+    {
+        $bootstrap = (string) file_get_contents(self::TEMPLATE_DIR . '/bootstrap.php');
+        $bootstrap = preg_replace('/^<\?php\s*(?:declare\(strict_types=1\);\s*)?/', '', $bootstrap) ?? $bootstrap;
+        $exported = var_export($gateConfig, true);
+
+        $contents = <<<PHP
+<?php
+declare(strict_types=1);
+
+\$PINROLL_GATE = {$exported};
+
+if (defined('PINROLL_GATE_AS_CONFIG')) {
+    return \$PINROLL_GATE;
+}
+
+{$bootstrap}
+
+pinroll_pingate_run(__DIR__, \$PINROLL_GATE);
+
+PHP;
+
+        if (file_put_contents($destination, $contents) === false) {
+            throw new PinrollException('Unable to write PinGate file: ' . $destination);
+        }
+    }
+
     public static function htaccessSnippetContent(?string $hostDir = null): string
     {
-        // $hostDir here is the *URL* path under the domain (web_path), not FTP deploy_path.
         $web = HostDir::webPath($hostDir);
         $prefix = $web === '' ? '' : $web . '/';
 
         return <<<HTACCESS
 # Pinroll — paste into host .htaccess before front-controller (only if check returns HTML)
-RewriteRule ^{$prefix}pingate\.php\$ - [L]
-RewriteRule ^{$prefix}gate/ - [L]
+RewriteRule ^{$prefix}pingate\\.php\$ - [L]
 
 HTACCESS;
     }
 
     /**
      * @param array<string, string> $files
-     * @param array<string, string> $directories localDir => zipPrefix
      */
-    private function createZip(string $target, array $files, array $directories = []): string
+    private function createZip(string $target, array $files): string
     {
         if (!class_exists(ZipArchive::class)) {
             throw new PinrollException('ZipArchive is not available. Install the PHP zip extension.');
@@ -140,117 +142,16 @@ HTACCESS;
             $zip->addFile($source, $nameInZip);
         }
 
-        foreach ($directories as $sourceDir => $zipPrefix) {
-            if (!is_dir($sourceDir)) {
-                continue;
-            }
-
-            $this->addDirectoryToZip($zip, $sourceDir, rtrim($zipPrefix, '/'));
-        }
-
         $zip->close();
 
         return $zipPath;
     }
 
-    private function addDirectoryToZip(ZipArchive $zip, string $sourceDir, string $zipPrefix): void
-    {
-        $sourceDir = rtrim($sourceDir, '/');
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($sourceDir, \FilesystemIterator::SKIP_DOTS),
-        );
-
-        foreach ($iterator as $file) {
-            if (!$file->isFile()) {
-                continue;
-            }
-
-            $relative = substr($file->getPathname(), strlen($sourceDir) + 1);
-            $zip->addFile($file->getPathname(), $zipPrefix . '/' . str_replace('\\', '/', $relative));
-        }
-    }
-
-    private function bundleGateVendor(string $gateDir): void
-    {
-        $sourceVendor = $this->resolveVendorSource();
-        $target = $gateDir . '/vendor';
-        PushProgress::arrow('Copying PinGate vendor…');
-        if (is_dir($target)) {
-            $this->removeDir($target);
-        }
-
-        $this->copyVendorTree($sourceVendor, $target);
-        PushProgress::arrow('PinGate vendor ready');
-    }
-
-    private function resolveVendorSource(): string
-    {
-        $candidates = [
-            $this->paths->root() . '/vendor/pinoox/pinroll/vendor',
-            dirname(__DIR__, 2) . '/vendor',
-            dirname($this->paths->root()) . '/pinroll/vendor',
-        ];
-
-        foreach ($candidates as $vendor) {
-            if (is_file($vendor . '/autoload.php')) {
-                return $vendor;
-            }
-        }
-
-        throw new PinrollException(
-            'Pinroll vendor not found. Run composer install in the pinroll package.',
-        );
-    }
-
-    private function copyVendorTree(string $source, string $target): void
-    {
-        if (!is_dir($source)) {
-            return;
-        }
-
-        $files = [];
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($source, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::SELF_FIRST,
-        );
-
-        foreach ($iterator as $item) {
-            $relative = str_replace('\\', '/', $iterator->getSubPathname());
-            $dest = $target . '/' . $relative;
-            if ($item->isDir()) {
-                if (!is_dir($dest)) {
-                    mkdir($dest, 0755, true);
-                }
-                continue;
-            }
-
-            $parent = dirname($dest);
-            if (!is_dir($parent)) {
-                mkdir($parent, 0755, true);
-            }
-
-            $files[] = [$item->getPathname(), $dest];
-        }
-
-        $total = count($files);
-        PushProgress::arrow('Copying ' . number_format($total) . ' vendor files…');
-        $current = 0;
-        foreach ($files as [$from, $to]) {
-            $current++;
-            copy($from, $to);
-            PushProgress::progress($current, $total, 'vendor');
-        }
-    }
-
-    /**
-     * Remove local pinroll/pingate.php, htaccess.snippet, and pinroll/gate/ after FTP upload.
-     */
     public function cleanupLocalArtifacts(?string $entryPath = null, ?string $snippetPath = null, ?string $gateDir = null): void
     {
-        $pinrollDir = ProjectPaths::dir($this->paths);
-        $entryPath ??= $pinrollDir . '/' . HostDir::GATE_ENTRY;
-        $snippetPath ??= $pinrollDir . '/htaccess.snippet';
-        $gateDir ??= ProjectPaths::gateDir($this->paths);
+        $workDir = ProjectPaths::workDir($this->paths);
+        $entryPath ??= $workDir . '/' . HostDir::GATE_ENTRY;
+        $snippetPath ??= $workDir . '/htaccess.snippet';
 
         if (is_file($entryPath)) {
             unlink($entryPath);
@@ -260,26 +161,17 @@ HTACCESS;
             unlink($snippetPath);
         }
 
-        if (!is_dir($gateDir)) {
-            return;
+        $legacyGate = ProjectPaths::dir($this->paths) . '/gate';
+        if (is_dir($legacyGate)) {
+            $this->removeDir($legacyGate);
         }
 
-        foreach (scandir($gateDir) ?: [] as $file) {
-            if ($file === '.' || $file === '..') {
-                continue;
-            }
-
-            $path = $gateDir . '/' . $file;
-            is_dir($path) ? $this->removeDir($path) : unlink($path);
+        $legacyLocal = rtrim($this->paths->root(), '/') . '/pinroll/gate';
+        if (is_dir($legacyLocal)) {
+            $this->removeDir($legacyLocal);
         }
 
-        @rmdir($gateDir);
-    }
-
-    /** @deprecated use cleanupLocalArtifacts() */
-    private function removeLocalDeployFiles(string $entryPath, string $snippetPath, string $gateDir): void
-    {
-        $this->cleanupLocalArtifacts($entryPath, $snippetPath, $gateDir);
+        unset($gateDir);
     }
 
     private function removeDir(string $dir): void
@@ -293,20 +185,6 @@ HTACCESS;
             is_dir($path) ? $this->removeDir($path) : unlink($path);
         }
 
-        rmdir($dir);
-    }
-
-    private function copyTemplate(string $template, string $destination): string
-    {
-        $source = self::TEMPLATE_DIR . '/' . $template;
-        if (!is_file($source)) {
-            throw new PinrollException('Missing PinGate template: ' . $source);
-        }
-
-        if (file_put_contents($destination, (string) file_get_contents($source)) === false) {
-            throw new PinrollException('Unable to write PinGate file: ' . $destination);
-        }
-
-        return $destination;
+        @rmdir($dir);
     }
 }

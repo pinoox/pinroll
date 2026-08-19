@@ -3,32 +3,17 @@
 declare(strict_types=1);
 
 /**
- * PinGate HTTP bootstrap — resolve platform root, then load platform vendor/autoload.php.
- * Optional gate/vendor is only a fallback (--with-vendor); never treated as platform root.
+ * PinGate HTTP runtime — compiled into a single pingate.php next to index.php.
+ * Platform root is __DIR__ of pingate.php (not a parent of a former gate/ folder).
  */
-return static function (string $configDir): void {
-    $configDir = rtrim(str_replace('\\', '/', $configDir), '/');
-    $configFile = $configDir . '/pingate.php';
-    /** @var array<string, mixed> $gateConfig */
-    $gateConfig = is_file($configFile) ? require $configFile : [];
-
+function pinroll_pingate_run(string $root, array $gateConfig = []): void
+{
+    $root = rtrim(str_replace('\\', '/', $root), '/');
+    $configFile = $root . '/pingate.php';
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
     $path = trim((string) ($_GET['route'] ?? ''), '/');
 
-    // Early vendor extract — must work even when platform vendor/autoload is broken.
     if ($method === 'POST' && $path === 'vendor') {
-        try {
-            $root = pinroll_resolve_platform_root($configDir, $gateConfig);
-        } catch (Throwable $e) {
-            $parent = dirname($configDir);
-            if ($parent === $configDir || !pinroll_looks_like_platform_root($parent)) {
-                pinroll_gate_json_error(503, 'Platform root not found for vendor extract.');
-
-                return;
-            }
-            $root = $parent;
-        }
-
         $input = json_decode((string) file_get_contents('php://input'), true);
         pinroll_handle_vendor_extract(
             $root,
@@ -41,7 +26,7 @@ return static function (string $configDir): void {
     }
 
     try {
-        $root = pinroll_resolve_platform_root($configDir, $gateConfig);
+        $root = pinroll_resolve_platform_root($root, $gateConfig);
     } catch (Throwable $e) {
         pinroll_gate_json_error(503, $e->getMessage());
 
@@ -54,28 +39,32 @@ return static function (string $configDir): void {
 
     pinroll_load_platform_autoload($root);
 
-    $gateVendor = $configDir . '/vendor/autoload.php';
-    if (is_file($gateVendor)) {
-        require_once $gateVendor;
+    $input = json_decode((string) file_get_contents('php://input'), true);
+    if (!is_array($input) || $input === []) {
+        $input = $_POST;
+    }
+    if (!is_array($input)) {
+        $input = [];
+    }
+    if (isset($_FILES['chunk']['tmp_name']) && is_string($_FILES['chunk']['tmp_name'])) {
+        $input['chunk'] = $_FILES['chunk']['tmp_name'];
     }
 
-    if (!pinroll_ensure_pinroll_classes($root)) {
-        return;
-    }
-
-    \Pinoox\Pinroll\Pinroll::configure([], new \Pinoox\Pinroll\Support\NativePathResolver($root));
-
-    $input = json_decode((string) file_get_contents('php://input'), true) ?: $_POST;
-    $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? null;
+    $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null);
 
     try {
-        $result = \Pinoox\Pinroll\Pinroll::gate()->handle($method, $path, is_array($input) ? $input : [], $auth, $configFile);
+        if (class_exists(\Pinoox\Pinroll\Pinroll::class, true)) {
+            \Pinoox\Pinroll\Pinroll::configure([], new \Pinoox\Pinroll\Support\NativePathResolver($root));
+            $result = \Pinoox\Pinroll\Pinroll::gate()->handle($method, $path, $input, $auth, $configFile);
+        } else {
+            $result = pinroll_pincore_gate_handle($root, $method, $path, $input, $auth, $gateConfig);
+        }
         header('Content-Type: application/json');
         echo json_encode(['success' => true, 'data' => $result], JSON_UNESCAPED_UNICODE);
     } catch (Throwable $e) {
         pinroll_gate_json_error((int) ($e->getCode() ?: 500), $e->getMessage());
     }
-};
+}
 
 function pinroll_load_platform_autoload(string $root): void
 {
@@ -94,59 +83,6 @@ function pinroll_load_platform_autoload(string $root): void
 }
 
 /**
- * Platform vendor must include a complete pinoox/pinroll (path-repo packs often miss files).
- */
-function pinroll_ensure_pinroll_classes(string $root): bool
-{
-    $pinrollRoot = pinroll_package_root($root);
-    $required = [
-        'Pinoox\\Pinroll\\Pinroll' => 'src/Pinroll.php',
-        'Pinoox\\Pinroll\\Exception\\PinrollException' => 'src/Exception/PinrollException.php',
-    ];
-
-    foreach ($required as $class => $relative) {
-        if (class_exists($class, true)) {
-            continue;
-        }
-
-        $file = $pinrollRoot !== null ? $pinrollRoot . '/' . $relative : null;
-        if ($file !== null && is_file($file)) {
-            require_once $file;
-        }
-
-        if (!class_exists($class, false)) {
-            pinroll_gate_json_error(
-                503,
-                'Incomplete pinoox/pinroll on host (missing ' . $class . '). '
-                . 'On your machine: php pinoox pinroll:vendor — upload pinroll/vendor.zip '
-                . 'and extract into the deploy root so vendor/pinoox/pinroll/src/ is complete.',
-            );
-
-            return false;
-        }
-    }
-
-    return true;
-}
-
-function pinroll_package_root(string $platformRoot): ?string
-{
-    $candidates = [
-        rtrim($platformRoot, '/') . '/vendor/pinoox/pinroll',
-        rtrim($platformRoot, '/') . '/vendor/pinoox/pinroll/src/..',
-    ];
-
-    foreach ($candidates as $candidate) {
-        $real = realpath($candidate);
-        if ($real !== false && is_file($real . '/src/Pinroll.php')) {
-            return $real;
-        }
-    }
-
-    return null;
-}
-
-/**
  * @param array<string, mixed> $gateConfig
  */
 function pinroll_resolve_platform_root(string $startDir, array $gateConfig = []): string
@@ -154,36 +90,34 @@ function pinroll_resolve_platform_root(string $startDir, array $gateConfig = [])
     $startDir = rtrim(str_replace('\\', '/', $startDir), '/');
     $configured = trim(str_replace('\\', '/', (string) ($gateConfig['platform_root'] ?? '')));
 
-    if ($configured !== '') {
+    if ($configured !== '' && $configured !== '.' && $configured !== './') {
         $resolved = pinroll_absolute_platform_root($configured, $startDir);
         if ($resolved !== null) {
             return $resolved;
         }
     }
 
-    // Prefer parent of gate/ (deploy root) — never treat gate/vendor as platform.
-    $parent = dirname($startDir);
-    if ($parent !== $startDir && pinroll_looks_like_platform_root($parent)) {
-        return $parent;
+    if (basename($startDir) !== 'gate' && pinroll_looks_like_platform_root($startDir)) {
+        return $startDir;
     }
 
-    $current = $parent !== $startDir ? $parent : $startDir;
-
+    $current = $startDir;
     for ($depth = 0; $depth < 8; $depth++) {
-        if ($current !== $startDir && pinroll_looks_like_platform_root($current)) {
-            return $current;
-        }
-
         $next = dirname($current);
         if ($next === $current) {
             break;
         }
-
         $current = $next;
+        if (basename($current) === 'gate') {
+            continue;
+        }
+        if (pinroll_looks_like_platform_root($current)) {
+            return $current;
+        }
     }
 
     throw new RuntimeException(
-        'Pinoox platform root not found. Install Pinoox next to pingate.php (same folder as gate/).',
+        'Pinoox platform root not found. Install Pinoox next to pingate.php (same folder as index.php).',
     );
 }
 
@@ -198,16 +132,17 @@ function pinroll_looks_like_platform_root(string $dir): bool
 
 function pinroll_absolute_platform_root(string $configured, string $startDir): ?string
 {
-    if ($configured === '..' || str_starts_with($configured, '../') || str_starts_with($configured, './')) {
-        $candidate = rtrim(str_replace('\\', '/', $startDir . '/' . $configured), '/');
-        $real = realpath($candidate);
-        $candidate = is_string($real) ? $real : $candidate;
-    } elseif (!str_starts_with($configured, '/')) {
+    $isAbsolute = str_starts_with($configured, '/')
+        || preg_match('#^[a-zA-Z]:[\\\\/]#', $configured) === 1;
+
+    if (!$isAbsolute) {
         $candidate = rtrim(str_replace('\\', '/', $startDir . '/' . $configured), '/');
         $real = realpath($candidate);
         $candidate = is_string($real) ? $real : $candidate;
     } else {
-        $candidate = rtrim($configured, '/');
+        $candidate = rtrim(str_replace('\\', '/', $configured), '/');
+        $real = realpath($candidate);
+        $candidate = is_string($real) ? str_replace('\\', '/', $real) : $candidate;
     }
 
     return pinroll_looks_like_platform_root($candidate) ? $candidate : null;
@@ -234,7 +169,7 @@ function pinroll_handle_vendor_extract(string $root, array $gateConfig, array $i
     }
     $root = str_replace('\\', '/', $rootReal);
 
-    $expectedHash = (string) ($gateConfig['token_hash'] ?? '');
+    $expectedHash = pinroll_gate_token_hash($root, $gateConfig);
     if ($expectedHash === '' || !preg_match('/^[a-f0-9]{64}$/', $expectedHash)) {
         pinroll_gate_json_error(503, 'PinGate token_hash missing or invalid. Re-run pinroll:gate.');
 
@@ -287,7 +222,11 @@ function pinroll_handle_vendor_extract(string $root, array $gateConfig, array $i
     }
 
     $vendorDir = $root . '/vendor';
-    $backupDir = $root . '/.pinroll-vendor-bak-' . bin2hex(random_bytes(4));
+    $tmp = $root . '/storage/tmp';
+    if (!is_dir($tmp)) {
+        @mkdir($tmp, 0755, true);
+    }
+    $backupDir = $tmp . '/vendor-bak-' . bin2hex(random_bytes(4));
 
     if (is_dir($vendorDir)) {
         if (!@rename($vendorDir, $backupDir)) {
@@ -337,8 +276,9 @@ function pinroll_handle_vendor_extract(string $root, array $gateConfig, array $i
         pinroll_remove_directory($backupDir);
     }
 
-    // Always remove the zip after a successful extract — do not leave it web-reachable.
     $deletedZip = @unlink($zipReal);
+
+    pinroll_refresh_pinker_overrides($root);
 
     header('Content-Type: application/json');
     header('X-Content-Type-Options: nosniff');
@@ -374,10 +314,7 @@ function pinroll_extract_bearer(?string $authorization): string
 
 function pinroll_vendor_rate_file(string $root): string
 {
-    $dir = rtrim($root, '/') . '/gate';
-    if (!is_dir($dir)) {
-        $dir = rtrim($root, '/') . '/storage/pinroll/gate';
-    }
+    $dir = rtrim($root, '/') . '/storage/pinroll/gate';
     if (!is_dir($dir)) {
         @mkdir($dir, 0755, true);
     }
@@ -564,12 +501,27 @@ function pinroll_remove_directory(string $path): void
         return;
     }
 
-    // Never follow a rename into deleting arbitrary trees without a vendor marker.
     $normalized = str_replace('\\', '/', $real);
-    if (!str_contains($normalized, '/vendor') && !str_contains(basename($normalized), 'pinroll-vendor-bak')) {
+    if (!pinroll_remove_directory_allowed($normalized)) {
         return;
     }
 
+    pinroll_remove_directory_contents($real);
+}
+
+function pinroll_remove_directory_allowed(string $normalized): bool
+{
+    return str_contains($normalized, '/vendor')
+        || str_contains($normalized, '/storage/tmp')
+        || str_contains($normalized, '/storage/pinion')
+        || str_contains($normalized, '/storage/pinroll')
+        || str_contains(basename($normalized), 'vendor-bak')
+        || str_contains(basename($normalized), 'pinroll-vendor-bak')
+        || preg_match('#/pinroll$#', $normalized) === 1;
+}
+
+function pinroll_remove_directory_contents(string $real): void
+{
     $items = scandir($real);
     if ($items === false) {
         return;
@@ -587,7 +539,7 @@ function pinroll_remove_directory(string $path): void
         }
 
         if (is_dir($full)) {
-            pinroll_remove_directory($full);
+            pinroll_remove_directory_contents($full);
             continue;
         }
 
@@ -596,3 +548,299 @@ function pinroll_remove_directory(string $path): void
 
     @rmdir($real);
 }
+
+function pinroll_gate_token_hash(string $root, array $gateConfig): string
+{
+    $envToken = pinroll_read_env_value($root, 'PINROLL_GATE_TOKEN');
+    if ($envToken !== '' && preg_match('/^[a-f0-9]{64}$/', $envToken)) {
+        return hash('sha256', $envToken);
+    }
+
+    return (string) ($gateConfig['token_hash'] ?? '');
+}
+
+function pinroll_read_env_value(string $root, string $key): string
+{
+    $fromEnv = $_ENV[$key] ?? $_SERVER[$key] ?? getenv($key);
+    if (is_string($fromEnv) && $fromEnv !== '') {
+        return trim($fromEnv, " \t\"'");
+    }
+
+    $file = rtrim($root, '/') . '/.env';
+    if (!is_file($file)) {
+        return '';
+    }
+
+    $pattern = '/^' . preg_quote($key, '/') . '\s*=\s*(.*)$/';
+    foreach (file($file, FILE_IGNORE_NEW_LINES) ?: [] as $line) {
+        $line = trim((string) $line);
+        if ($line === '' || str_starts_with($line, '#')) {
+            continue;
+        }
+        if (preg_match($pattern, $line, $matches) !== 1) {
+            continue;
+        }
+
+        return trim(trim((string) $matches[1]), "\"'");
+    }
+
+    return '';
+}
+
+function pinroll_refresh_pinker_overrides(string $root): void
+{
+    $autoload = rtrim($root, '/') . '/vendor/autoload.php';
+    if (is_file($autoload)) {
+        require_once $autoload;
+    }
+
+    if (class_exists(\Pinoox\Component\Package\Pinx\PlatformPinkerGuard::class)) {
+        \Pinoox\Component\Package\Pinx\PlatformPinkerGuard::refreshOverrideTimestamps($root);
+    }
+}
+
+function pinroll_incoming_dir(string $root): string
+{
+    $dir = rtrim($root, '/') . '/storage/pinroll/incoming';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
+
+    return $dir;
+}
+
+function pinroll_assert_gate_auth(string $root, array $gateConfig, ?string $authorization): void
+{
+    $hash = pinroll_gate_token_hash($root, $gateConfig);
+    if ($hash === '' || !preg_match('/^[a-f0-9]{64}$/', $hash)) {
+        throw new RuntimeException('PinGate token_hash missing or invalid. Re-run pinroll:gate.');
+    }
+
+    $token = pinroll_extract_bearer($authorization);
+    if ($token === '' || !hash_equals($hash, hash('sha256', $token))) {
+        throw new RuntimeException('Invalid token.');
+    }
+}
+
+/**
+ * Host handler when pinoox/pinroll is not installed (require-dev). Uses pincore Pinx + Pinion.
+ *
+ * @param array<string, mixed> $input
+ * @param array<string, mixed> $gateConfig
+ * @return array<string, mixed>
+ */
+function pinroll_pincore_gate_handle(
+    string $root,
+    string $method,
+    string $path,
+    array $input,
+    ?string $authorization,
+    array $gateConfig,
+): array {
+    pinroll_assert_gate_auth($root, $gateConfig, $authorization);
+    $path = trim($path, '/');
+    $incoming = pinroll_incoming_dir($root);
+
+    if (!class_exists(\Pinoox\Pinion\Pinion::class)) {
+        throw new RuntimeException('Pinion is not available on the host. Restore vendor/ first (POST ?route=vendor).');
+    }
+
+    \Pinoox\Pinion\Pinion::configure([
+        'storage_path' => $root . '/storage/pinion',
+    ]);
+    $pinion = \Pinoox\Pinion\Pinion::http(['destination' => $incoming]);
+
+    return match (true) {
+        $method === 'POST' && $path === 'push/init' => $pinion->init(array_merge($input, ['destination' => $incoming])),
+        $method === 'POST' && $path === 'push/upload' => $pinion->upload($input, $input['chunk'] ?? null),
+        $method === 'POST' && $path === 'push/complete' => $pinion->complete($input),
+        $method === 'POST' && ($path === 'install' || $path === 'apply') => pinroll_pincore_install($root, $incoming, $input),
+        $method === 'GET' && $path === 'status' => ['status' => 'ready', 'platform' => ['ok' => true, 'message' => 'Pinx ready']],
+        $method === 'GET' && $path === 'incoming' => pinroll_pincore_incoming($incoming),
+        $method === 'POST' && $path === 'rollback' => pinroll_pincore_install($root, $incoming, $input + ['force' => true]),
+        $method === 'POST' && $path === 'cleanup' => pinroll_pincore_cleanup($root, $incoming, $input),
+        $method === 'GET' && $path === 'history' => ['history' => []],
+        default => throw new RuntimeException('Unknown PinGate route: ' . $path),
+    };
+}
+
+/**
+ * @param array<string, mixed> $input
+ * @return array<string, mixed>
+ */
+function pinroll_pincore_install(string $root, string $incoming, array $input): array
+{
+    $deployId = (string) ($input['deploy_id'] ?? '');
+    $archive = pinroll_pincore_resolve_archive($incoming, $deployId !== '' ? $deployId : null);
+    $resolvedId = preg_replace('/\.(tar|pinx|pin|zip)$/i', '', basename($archive)) ?: basename($archive);
+    $workDir = $root . '/storage/tmp/apply/' . $resolvedId;
+    $installable = $archive;
+    $lower = strtolower($archive);
+    if (str_ends_with($lower, '.tar')) {
+        $installable = pinroll_pincore_extract_tar($archive, $workDir);
+    }
+
+    $force = !empty($input['force']);
+    $ok = pinroll_pincore_apply_archive($installable, $force);
+    pinroll_remove_directory($workDir);
+
+    if (!$ok) {
+        throw new RuntimeException('Package install failed.');
+    }
+
+    pinroll_refresh_pinker_overrides($root);
+
+    return ['deploy_id' => $resolvedId, 'status' => 'applied'];
+}
+
+function pinroll_pincore_apply_archive(string $archive, bool $force): bool
+{
+    $isPlatform = class_exists(\Pinoox\Component\Package\Pinx\PlatformArchive::class)
+        && \Pinoox\Component\Package\Pinx\PlatformArchive::isPlatformArchive($archive);
+
+    if ($isPlatform && class_exists(\Pinoox\Portal\Pinx::class)) {
+        $result = \Pinoox\Portal\Pinx::platformUpdater()->update($archive, ['force' => $force]);
+
+        return (bool) ($result->success ?? false);
+    }
+
+    if (!class_exists(\Pinoox\Portal\Pinx::class)) {
+        throw new RuntimeException('Pincore Pinx is not available on the host.');
+    }
+
+    $result = \Pinoox\Portal\Pinx::installer()->install($archive, ['force' => $force]);
+
+    return (bool) ($result->success ?? false);
+}
+
+function pinroll_pincore_resolve_archive(string $incoming, ?string $deployId): string
+{
+    if (!is_dir($incoming)) {
+        throw new RuntimeException('No release archive found.');
+    }
+
+    $files = [];
+    foreach (scandir($incoming) ?: [] as $name) {
+        if ($name === '.' || $name === '..') {
+            continue;
+        }
+        $path = $incoming . '/' . $name;
+        if (!is_file($path)) {
+            continue;
+        }
+        $lower = strtolower($name);
+        if (!str_ends_with($lower, '.pinx') && !str_ends_with($lower, '.pin') && !str_ends_with($lower, '.tar') && !str_ends_with($lower, '.zip')) {
+            continue;
+        }
+        $files[] = ['path' => $path, 'mtime' => (int) filemtime($path), 'id' => preg_replace('/\.(tar|pinx|pin|zip)$/i', '', $name) ?: $name];
+    }
+
+    usort($files, static fn (array $a, array $b): int => $b['mtime'] <=> $a['mtime']);
+    if ($files === []) {
+        throw new RuntimeException('No release archive found.');
+    }
+
+    if ($deployId === null || $deployId === '') {
+        return $files[0]['path'];
+    }
+
+    foreach ($files as $file) {
+        if ($file['id'] === $deployId || str_contains($file['path'], $deployId)) {
+            return $file['path'];
+        }
+    }
+
+    throw new RuntimeException('Release not found: ' . $deployId);
+}
+
+function pinroll_pincore_extract_tar(string $tarPath, string $workDir): string
+{
+    if (!class_exists(PharData::class)) {
+        throw new RuntimeException('Phar extension is required to extract release archives.');
+    }
+    if (!is_dir($workDir)) {
+        mkdir($workDir, 0755, true);
+    }
+
+    $phar = new PharData($tarPath);
+    $phar->extractTo($workDir, null, true);
+    $matches = glob($workDir . '/*.pinx') ?: [];
+    if ($matches === []) {
+        $matches = glob($workDir . '/*.zip') ?: [];
+    }
+    if ($matches === []) {
+        throw new RuntimeException('No .pinx or .zip found inside ' . basename($tarPath));
+    }
+
+    return $matches[0];
+}
+
+/**
+ * @return array{releases: list<array{id: string, path: string, size: int, mtime: int}>}
+ */
+function pinroll_pincore_incoming(string $incoming): array
+{
+    $releases = [];
+    if (!is_dir($incoming)) {
+        return ['releases' => []];
+    }
+
+    foreach (scandir($incoming) ?: [] as $name) {
+        if ($name === '.' || $name === '..') {
+            continue;
+        }
+        $path = $incoming . '/' . $name;
+        if (!is_file($path)) {
+            continue;
+        }
+        $releases[] = [
+            'id' => preg_replace('/\.(tar|pinx|pin|zip)$/i', '', $name) ?: $name,
+            'path' => $name,
+            'size' => (int) filesize($path),
+            'mtime' => (int) filemtime($path),
+        ];
+    }
+
+    usort($releases, static fn (array $a, array $b): int => $b['mtime'] <=> $a['mtime']);
+
+    return ['releases' => $releases];
+}
+
+/**
+ * @param array<string, mixed> $input
+ * @return array<string, mixed>
+ */
+function pinroll_pincore_cleanup(string $root, string $incoming, array $input): array
+{
+    $keep = isset($input['keep']) ? max(0, (int) $input['keep']) : 3;
+    $deleted = 0;
+    $files = [];
+    foreach (scandir($incoming) ?: [] as $name) {
+        if ($name === '.' || $name === '..') {
+            continue;
+        }
+        $path = $incoming . '/' . $name;
+        if (is_file($path)) {
+            $files[] = ['path' => $path, 'mtime' => (int) filemtime($path)];
+        }
+    }
+    usort($files, static fn (array $a, array $b): int => $b['mtime'] <=> $a['mtime']);
+    foreach ($files as $index => $file) {
+        if ($index < $keep) {
+            continue;
+        }
+        @unlink($file['path']);
+        $deleted++;
+    }
+
+    pinroll_remove_directory($root . '/storage/tmp');
+    @mkdir($root . '/storage/tmp', 0755, true);
+
+    $legacy = $root . '/pinroll';
+    if (is_dir($legacy) && !is_file($legacy . '/pinroll.config.php')) {
+        pinroll_remove_directory($legacy);
+    }
+
+    return ['keep' => $keep, 'files_deleted' => $deleted];
+}
+

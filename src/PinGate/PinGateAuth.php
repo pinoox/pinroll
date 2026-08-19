@@ -30,9 +30,52 @@ final class PinGateAuth
         }
     }
 
+    /**
+     * @param array<string, mixed> $gate
+     */
+    public function expectedHash(array $gate, string $root = ''): string
+    {
+        $envToken = $this->envToken($root);
+        if ($envToken !== '') {
+            return TokenGenerator::hashToken($envToken);
+        }
+
+        return (string) ($gate['token_hash'] ?? '');
+    }
+
     public function hashToken(string $token): string
     {
         return TokenGenerator::hashToken($token);
+    }
+
+    private function envToken(string $root): string
+    {
+        $fromEnv = $_ENV['PINROLL_GATE_TOKEN'] ?? $_SERVER['PINROLL_GATE_TOKEN'] ?? getenv('PINROLL_GATE_TOKEN');
+        if (is_string($fromEnv) && preg_match('/^[a-f0-9]{64}$/', trim($fromEnv))) {
+            return trim($fromEnv);
+        }
+
+        $file = rtrim(str_replace('\\', '/', $root), '/') . '/.env';
+        if ($root === '' || !is_file($file)) {
+            return '';
+        }
+
+        foreach (file($file, FILE_IGNORE_NEW_LINES) ?: [] as $line) {
+            $line = trim((string) $line);
+            if ($line === '' || str_starts_with($line, '#')) {
+                continue;
+            }
+            if (preg_match('/^PINROLL_GATE_TOKEN\s*=\s*(.*)$/', $line, $matches) !== 1) {
+                continue;
+            }
+
+            $token = trim(trim((string) $matches[1]), "\"'");
+            if (preg_match('/^[a-f0-9]{64}$/', $token)) {
+                return $token;
+            }
+        }
+
+        return '';
     }
 
     private function extractBearer(?string $authorization): string

@@ -24,7 +24,7 @@ final class ConfigWriter
     {
         $dir = dirname($path);
         if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
-            throw new PinrollException('Unable to create pinroll directory: ' . $dir);
+            throw new PinrollException('Unable to create Pinroll config directory: ' . $dir);
         }
 
         if (file_put_contents($path, ConfigTemplate::renderHosts($hosts, $globals)) === false) {

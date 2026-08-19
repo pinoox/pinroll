@@ -9,7 +9,9 @@ test('platform root resolver walks up to vendor directory', function () {
     $gateDir = $fixture->root . '/gate';
     mkdir($gateDir, 0755, true);
 
-    expect(PlatformRootResolver::resolve($gateDir))->toBe($fixture->root);
+    $normalize = static fn (string $path): string => str_replace('\\', '/', (string) (realpath($path) ?: $path));
+
+    expect($normalize(PlatformRootResolver::resolve($gateDir)))->toBe($normalize($fixture->root));
 
     $fixture->cleanup();
 });
@@ -23,7 +25,7 @@ test('platform root resolver skips gate vendor and uses parent platform', functi
     mkdir($gateDir . '/vendor', 0755, true);
     file_put_contents($gateDir . '/vendor/autoload.php', '<?php // gate only');
 
-    $normalize = static fn (string $path): string => realpath($path) ?: $path;
+    $normalize = static fn (string $path): string => str_replace('\\', '/', (string) (realpath($path) ?: $path));
 
     expect($normalize(PlatformRootResolver::resolve($gateDir)))
         ->toBe($normalize($fixture->root));
@@ -33,12 +35,27 @@ test('platform root resolver skips gate vendor and uses parent platform', functi
     $fixture->cleanup();
 });
 
+test('platform root resolver treats pingate directory as platform root', function () {
+    $fixture = new Pinoox\Pinroll\Tests\Support\ProjectFixture();
+    mkdir($fixture->root . '/vendor', 0755, true);
+    file_put_contents($fixture->root . '/vendor/autoload.php', '<?php');
+
+    $normalize = static fn (string $path): string => str_replace('\\', '/', (string) (realpath($path) ?: $path));
+
+    expect($normalize(PlatformRootResolver::resolve($fixture->root)))->toBe($normalize($fixture->root));
+
+    $fixture->cleanup();
+});
+
 test('platform root resolver accepts configured platform_root', function () {
     $fixture = new Pinoox\Pinroll\Tests\Support\ProjectFixture();
     mkdir($fixture->root . '/vendor', 0755, true);
     file_put_contents($fixture->root . '/vendor/autoload.php', '<?php');
 
-    expect(PlatformRootResolver::resolve('/tmp', ['platform_root' => $fixture->root]))->toBe($fixture->root);
+    $normalize = static fn (string $path): string => str_replace('\\', '/', (string) (realpath($path) ?: $path));
+
+    expect($normalize(PlatformRootResolver::resolve('/tmp', ['platform_root' => $fixture->root])))
+        ->toBe($normalize($fixture->root));
 
     $fixture->cleanup();
 });

@@ -15,7 +15,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
     name: 'pinroll:init',
-    description: 'Scaffold pinroll/pinroll.config.php and .env key stubs',
+    description: 'Scaffold .pinoox/pinroll.config.php and .env key stubs',
 )]
 class PinrollInitCommand extends Terminal
 {

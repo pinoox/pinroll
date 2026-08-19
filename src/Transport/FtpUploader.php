@@ -110,6 +110,46 @@ final class FtpUploader
     }
 
     /**
+     * Remove leftover remote gate/ (legacy PinGate layout).
+     *
+     * @param resource $connection
+     */
+    public function removeRemoteTree($connection, string $remoteDir, bool $mustBeGate = true): void
+    {
+        $remoteDir = trim(str_replace('\\', '/', $remoteDir), '/');
+        if ($remoteDir === '' || $remoteDir === '.') {
+            return;
+        }
+        if ($mustBeGate && basename($remoteDir) !== HostDir::GATE_DIR) {
+            return;
+        }
+
+        $list = @ftp_nlist($connection, $remoteDir);
+        if ($list === false) {
+            @ftp_delete($connection, $remoteDir);
+            @ftp_rmdir($connection, $remoteDir);
+
+            return;
+        }
+
+        if ($mustBeGate) {
+            PushProgress::arrow('FTP remove leftover ' . $remoteDir . '/');
+        }
+        foreach ($list as $item) {
+            $name = basename(str_replace('\\', '/', (string) $item));
+            if ($name === '' || $name === '.' || $name === '..') {
+                continue;
+            }
+            $path = $remoteDir . '/' . $name;
+            if (@ftp_delete($connection, $path) === false) {
+                $this->removeRemoteTree($connection, $path, false);
+            }
+        }
+
+        @ftp_rmdir($connection, $remoteDir);
+    }
+
+    /**
      * @return list<string>
      */
     private function collectFiles(string $localDir): array

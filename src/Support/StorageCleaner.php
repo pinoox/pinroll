@@ -45,6 +45,8 @@ final class StorageCleaner
             'releases' => $options['releases'] ?? true,
             'backups' => $options['backups'] ?? true,
             'pinx_export' => $options['pinx_export'] ?? true,
+            'pinion' => $options['pinion'] ?? true,
+            'legacy' => $options['legacy'] ?? true,
         ];
 
         $deleted = [];
@@ -86,6 +88,19 @@ final class StorageCleaner
             $this->cleanPinxExports($keep, $dryRun, $deleted, $kept);
         }
 
+        if ($scopes['pinion']) {
+            $this->cleanTree($this->config->storage('pinion'), $dryRun, $deleted, 'pinion');
+        }
+
+        if ($scopes['legacy']) {
+            $legacy = rtrim(str_replace('\\', '/', $this->config->paths()->root()), '/') . '/pinroll';
+            $incoming = str_replace('\\', '/', $this->config->storage((string) $this->config->get('incoming_path', 'pinroll/incoming')));
+            $legacyUsedForIncoming = str_starts_with($incoming, $legacy . '/') || $incoming === $legacy;
+            if (is_dir($legacy) && !is_file($legacy . '/pinroll.config.php') && !$legacyUsedForIncoming) {
+                $this->cleanTree($legacy, $dryRun, $deleted, 'legacy-pinroll');
+            }
+        }
+
         $bytes = array_sum(array_column($deleted, 'bytes'));
 
         return [
@@ -96,6 +111,11 @@ final class StorageCleaner
             'bytes_freed' => $bytes,
             'files_deleted' => count($deleted),
         ];
+    }
+
+    public function removePath(string $path): void
+    {
+        $this->removeTree($path);
     }
 
     /**

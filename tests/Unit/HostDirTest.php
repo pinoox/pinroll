@@ -41,9 +41,9 @@ test('publicHtmlPath does not double-prefix public_html', function () {
     expect(HostDir::publicHtmlPath('public_html/pinoox3'))->toBe('public_html/pinoox3');
 });
 
-test('local build stays under pinroll folder', function () {
-    expect(HostDir::localEntryPath())->toBe('pinroll/pingate.php');
-    expect(HostDir::localGateDir())->toBe('pinroll/gate');
+test('local build stays under storage/pinroll', function () {
+    expect(HostDir::localEntryPath())->toBe('storage/pinroll/pingate.php');
+    expect(HostDir::localGateDir())->toBe('storage/pinroll/gate-build');
 });
 
 test('deploy zip mirrors pinroll layout and cleans local files', function () {
@@ -62,12 +62,12 @@ test('deploy zip mirrors pinroll layout and cleans local files', function () {
 
     expect($export['zip'])->toBe(ProjectPaths::deployZip($paths, 'production'));
     expect(is_file($export['zip']))->toBeTrue();
-    expect(is_file($fixture->root . '/pinroll/pingate.php'))->toBeFalse();
+    expect(is_file($fixture->root . '/storage/pinroll/pingate.php'))->toBeFalse();
 
     $zip = new ZipArchive();
     $zip->open((string) $export['zip']);
     expect($zip->locateName('pingate.php'))->not->toBeFalse();
-    expect($zip->locateName('gate/pingate.php'))->not->toBeFalse();
+    expect($zip->locateName('gate/pingate.php'))->toBeFalse();
     $zip->close();
 
     $fixture->cleanup();
@@ -115,4 +115,24 @@ test('htaccess snippet includes dir prefix', function () {
     expect(PinGateExporter::htaccessSnippetContent('public_html/pinoox3'))->toContain('pinoox3/pingate');
     expect(PinGateExporter::htaccessSnippetContent('public_html/pinoox3'))->not->toContain('public_html');
     expect(PinGateExporter::htaccessSnippetContent('public_html'))->toContain('^pingate');
+    expect(PinGateExporter::htaccessSnippetContent(''))->not->toContain('gate/');
+});
+
+test('exported pingate.php is a single file with config guard and query routing', function () {
+    $fixture = new Pinoox\Pinroll\Tests\Support\ProjectFixture();
+    $paths = new Pinoox\Pinroll\Support\NativePathResolver($fixture->root);
+
+    $export = (new PinGateExporter($paths))->export('production', [
+        'token_hash' => hash('sha256', 'secret-token'),
+        'dir' => '',
+    ], false, '', keepLocal: true);
+
+    $contents = (string) file_get_contents($export['entry']);
+    expect($contents)->toContain('PINROLL_GATE_AS_CONFIG')
+        ->and($contents)->toContain('pinroll_pingate_run(__DIR__, $PINROLL_GATE)')
+        ->and($contents)->toContain("\$_GET['route']")
+        ->and($contents)->not->toContain("dirname(\$configDir)")
+        ->and($contents)->toContain("\$_FILES['chunk']");
+
+    $fixture->cleanup();
 });

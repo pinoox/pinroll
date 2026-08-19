@@ -44,6 +44,7 @@ final class PinrollInput
             'all' => $input->getOption('all') ? true : null,
             'vendor' => $input->getOption('vendor') ? true : null,
             'theme' => $input->getOption('theme') ? true : null,
+            'platform' => $input->hasOption('platform') && $input->getOption('platform') ? true : null,
             'apps' => is_string($apps) && $apps !== '' ? $apps : null,
             'app' => is_string($app) && $app !== '' ? $app : null,
             'package' => is_string($legacyPackage) && $legacyPackage !== '' ? $legacyPackage : null,

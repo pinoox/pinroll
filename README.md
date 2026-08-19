@@ -1,13 +1,13 @@
 # Pinroll — Release Rollout Engine
 
-**Pinroll** (`pinoox/pinroll`) **1.1.3** — atomic release rollout, rollback, and PinGate delivery for Pinoox.
+**Pinroll** (`pinoox/pinroll`) **1.2.0** — atomic release rollout, rollback, and PinGate delivery for Pinoox.
 
 | Concept | Meaning |
 |---------|---------|
 | **Host** | Where to deploy (`production`, `staging`, …) |
 | **Bundle** | What to ship (auto-detect apps, or `--bundle=…`) |
 | **Transport** | How to send (`ftp`, `ssh`, `pinion`, `local`) |
-| **PinGate** | Remote HTTP entry for install / status / rollback / vendor extract |
+| **PinGate** | One public file `pingate.php` for install / status / rollback / vendor extract |
 
 ## Documentation
 
@@ -19,21 +19,15 @@ Full guides (setup, hosts, retention, rollback, CLI):
 
 ## Install
 
-On a Pinoox **platform** project, add Pinroll as a **production** dependency (required on the host for PinGate):
+CLI on the **dev machine** (recommended):
 
 ```bash
-composer require pinoox/pinroll
+composer require --dev pinoox/pinroll
 ```
 
-```json
-"require": {
-  "php": "^8.2",
-  "pinoox/pincore": "^3.8",
-  "pinoox/pinroll": "^1.1"
-}
-```
+The host does **not** need Pinroll in `vendor/`. `pingate.php` applies releases with pincore (`pinx:install` / `pinx:update`) and Pinion.
 
-Do **not** put `pinoox/pinroll` only in `require-dev`. Platform builds and host vendor packs strip `require-dev`.
+Put Pinroll in `require` only if you want PinGate to use Pinroll classes on the server.
 
 ## Quick start
 
@@ -50,13 +44,15 @@ php pinoox pinroll:deploy
 
 | Step | Command | What it does |
 |------|---------|--------------|
-| 1 | `pinroll:init` | Scaffold `pinroll/pinroll.config.php` |
+| 1 | `pinroll:init` | Scaffold `.pinoox/pinroll.config.php` |
 | 2 | Edit `.env` | Set `PINROLL_*` FTP/SSH keys |
 | 3 | `pinroll:connect` | Deploy path, site URL, upload PinGate (`--reset` to re-run) |
 | 4 | `pinroll:apps` | Set default packages for the host |
 | 5 | `pinroll:vendor --push` | Build production `vendor.zip`, upload, extract on host |
 | 6 | `pinroll:check` | Verify transport + PinGate |
-| 7 | `pinroll:deploy` | Build, upload, and install apps (go live) |
+| 7 | `pinroll:deploy` | Build, upload, and install (go live) |
+
+Single-app (pinx-root): `pinx deploy` forwards to `pinroll:deploy`.
 
 ### Subdomain folders
 
@@ -68,7 +64,7 @@ php pinoox pinroll:deploy
 | `public_html` | `https://example.com` | `https://example.com/pingate.php?route=` |
 | `public_html/shop` | `https://example.com/shop` | `https://example.com/shop/pingate.php?route=` |
 
-If `pinroll:check` reports **Not PinGate JSON**, upload gate next to `index.php` and confirm the site URL matches the live domain.
+If `pinroll:check` reports **Not PinGate JSON**, upload `pingate.php` next to `index.php` and confirm the site URL matches the live domain. Do **not** use PATH_INFO (`pingate.php/push/…`); routing is `?route=`.
 
 ## CLI
 
@@ -78,8 +74,10 @@ php pinoox pinroll:connect
 php pinoox pinroll:apps
 php pinoox pinroll:push
 php pinoox pinroll:deploy
+php pinoox pinroll:deploy --app=com_pinoox_developer
+php pinoox pinroll:deploy --theme
+php pinoox pinroll:deploy --platform
 php pinoox pinroll:install
-php pinoox pinroll:push --app=com_pinoox_developer
 php pinoox pinroll:build --bundle=single-app --package=com_pinoox_developer
 php pinoox pinroll:status
 php pinoox pinroll:history
@@ -91,18 +89,22 @@ php pinoox pinroll:vendor --push
 php pinoox pinroll:pull --server=https://releases.example.com
 ```
 
-- `pinroll:init` — scaffold `pinroll/` + `.env` key stubs (no prompts)
+- `pinroll:init` — scaffold `.pinoox/pinroll.config.php` + `.env` key stubs (legacy `pinroll/pinroll.config.php` still loads)
 - `pinroll:connect` — configure host + upload PinGate; verifies if already set (`--reset` to redo)
 - `pinroll:apps` — set `hosts.*.apps` (interactive or `--apps=`)
 - `pinroll:check` — verify host connectivity before push
 - `pinroll:push` — build and upload only (no install)
 - `pinroll:deploy` — push + install via PinGate (go live); runs `fe:build` before `pinx:build`
+- `pinroll:deploy --platform` — `pinx:build platform` then `pinx:update` on the host
+- `pinroll:deploy --theme` — rebuild theme assets (`fe:build`) then include in the app `.pinx` / FTP dist
 - `pinroll:install` — install a staged release (`pinroll:apply` is a deprecated alias)
 - `pinroll:rollback` — switch the host back to a previous release
-- `pinroll:cleanup` — prune local/remote archives by `keep` / `store` (after last install in multi-app deploy)
-- `pinroll:gate` — rebuild/upload PinGate (`-z` zip; `--no-upload` keep local)
-- `pinroll:vendor` — production `vendor.zip` via PlatformComposer (`--push` FTP + PinGate `POST /vendor`)
+- `pinroll:cleanup` — prune local/remote archives by `keep` / `store`
+- `pinroll:gate` — rebuild/upload a single `pingate.php` (`-z` zip; `--no-upload` keep local)
+- `pinroll:vendor` — production `vendor.zip` via PlatformComposer (`--push` FTP + PinGate `POST ?route=vendor`)
 - `pinroll:pull` — pull newer manifest from a release server (alias: `pinroll:poll`)
+
+Updates on the host use the same pincore APIs as the CLI: **app/theme** → `PinxInstaller` (`pinx:install`), **platform/core** → `PlatformUpdater` (`pinx:update`).
 
 ## Tests
 

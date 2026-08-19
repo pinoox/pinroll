@@ -6,6 +6,7 @@ use Pinoox\Pinroll\Contract\PathResolverInterface;
 use Pinoox\Pinroll\Exception\PinrollException;
 use Pinoox\Pinroll\Support\AppBuildPaths;
 use Pinoox\Pinroll\Support\Config;
+use Pinoox\Pinroll\Support\ProjectPaths;
 use Pinoox\Pinroll\Support\PushProgress;
 use Pinoox\Pinroll\Support\TokenGenerator;
 
@@ -111,7 +112,7 @@ final class ReleaseBuilder
      */
     private function augmentPinxBuildCommand(string $command, ?string $package): array
     {
-        if ($package === null || $package === '' || !preg_match('/\bpinx:build\b/', $command)) {
+        if (!preg_match('/\bpinx:build\b/', $command)) {
             return [$command, null];
         }
 
@@ -119,7 +120,24 @@ final class ReleaseBuilder
             return [$command, null];
         }
 
+        if (preg_match('/\bpinx:build\s+platform\b/', $command)) {
+            $outputPath = ProjectPaths::workDir($this->paths) . '/platform-' . date('Ymd_His') . '.zip';
+            AppBuildPaths::ensureDir(dirname($outputPath));
+            PushProgress::arrow('output: ' . AppBuildPaths::displayPath($this->paths->root(), $outputPath));
+
+            return [$command . ' -o ' . escapeshellarg($outputPath), $outputPath];
+        }
+
         $root = $this->paths->root();
+        if ($package === null || $package === '') {
+            if (is_file($root . '/app.php')) {
+                $package = (string) (PlatformProfile::fromRoot($root)->defaultPackage() ?: '');
+            }
+            if ($package === '') {
+                return [$command, null];
+            }
+        }
+
         $outputPath = AppBuildPaths::nextPinxOutput($root, $package);
         AppBuildPaths::ensureDir(dirname($outputPath));
         PushProgress::arrow('output: ' . AppBuildPaths::displayPath($root, $outputPath));
@@ -129,6 +147,24 @@ final class ReleaseBuilder
 
     private function packageArtifacts(array $artifacts, string $outputDir, string $deployId): string
     {
+        $installables = [];
+        foreach ($artifacts as $artifact) {
+            $pinx = $artifact['pinx'] ?? null;
+            if (!is_string($pinx) || !is_file($pinx)) {
+                continue;
+            }
+
+            $lower = strtolower($pinx);
+            if (str_ends_with($lower, '.zip') || str_ends_with($lower, '.pinx') || str_ends_with($lower, '.pin')) {
+                $installables[] = $pinx;
+            }
+        }
+
+        // Ship a single Pinx/platform archive as-is so host pinx:install / pinx:update can apply it.
+        if (count($installables) === 1) {
+            return $installables[0];
+        }
+
         $archive = $outputDir . '/' . $deployId . '.tar';
 
         if (class_exists(\PharData::class)) {

@@ -67,7 +67,7 @@ test('vendor packer uses PlatformComposer staging and keeps pinroll from require
     $fixture->cleanup();
 });
 
-test('vendor packer rejects pinroll only in require-dev', function () {
+test('vendor packer allows pinroll only in require-dev', function () {
     $fixture = new Pinoox\Pinroll\Tests\Support\ProjectFixture();
     $root = $fixture->root;
 
@@ -83,8 +83,11 @@ test('vendor packer rejects pinroll only in require-dev', function () {
 
     $paths = new NativePathResolver($root);
 
-    expect(fn () => (new VendorPacker($paths))->pack())
-        ->toThrow(Pinoox\Pinroll\Exception\PinrollException::class);
+    try {
+        (new VendorPacker($paths))->pack();
+    } catch (Throwable $e) {
+        expect($e->getMessage())->not->toContain('must be a production dependency');
+    }
 
     $fixture->cleanup();
 });

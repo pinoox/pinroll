@@ -35,7 +35,7 @@ final class HostAppsWriter
     {
         $path = ProjectPaths::configFile(Pinroll::paths());
         if ($path === null || !is_file($path)) {
-            throw new PinrollException('pinroll/pinroll.config.php not found. Run pinroll:init first.');
+            throw new PinrollException('.pinoox/pinroll.config.php not found. Run pinroll:init first.');
         }
 
         if ($apps !== null && $apps !== []) {

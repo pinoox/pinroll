@@ -5,8 +5,8 @@ namespace Pinoox\Pinroll\Support;
 final class PlatformRootResolver
 {
     /**
-     * Resolve Pinoox platform root from a PinGate config directory (…/gate).
-     * Never treats gate/vendor as the platform root.
+     * Resolve Pinoox platform root from pingate.php's directory (__DIR__).
+     * A leftover gate/ folder is never treated as the platform root.
      *
      * @param array<string, mixed> $gateConfig
      */
@@ -22,28 +22,27 @@ final class PlatformRootResolver
             }
         }
 
-        $parent = dirname($startDir);
-        if ($parent !== $startDir && self::looksLikePlatform($parent)) {
-            return $parent;
+        if (basename($startDir) !== 'gate' && self::looksLikePlatform($startDir)) {
+            return $startDir;
         }
 
-        $current = $parent !== $startDir ? $parent : $startDir;
-
+        $current = $startDir;
         for ($depth = 0; $depth < 8; $depth++) {
-            if ($current !== $startDir && self::looksLikePlatform($current)) {
-                return $current;
-            }
-
             $next = dirname($current);
             if ($next === $current) {
                 break;
             }
-
             $current = $next;
+            if (basename($current) === 'gate') {
+                continue;
+            }
+            if (self::looksLikePlatform($current)) {
+                return $current;
+            }
         }
 
         throw new \RuntimeException(
-            'Pinoox platform root not found. Install Pinoox next to pingate.php (same folder as gate/).',
+            'Pinoox platform root not found. Install Pinoox next to pingate.php (same folder as index.php).',
         );
     }
 
@@ -58,12 +57,17 @@ final class PlatformRootResolver
 
     private static function absoluteFromConfig(string $configured, string $startDir): ?string
     {
-        if ($configured === '..' || str_starts_with($configured, '../') || str_starts_with($configured, './') || !str_starts_with($configured, '/')) {
+        $isAbsolute = str_starts_with($configured, '/')
+            || preg_match('#^[a-zA-Z]:[\\\\/]#', $configured) === 1;
+
+        if (!$isAbsolute) {
             $candidate = rtrim(str_replace('\\', '/', $startDir . '/' . $configured), '/');
             $real = realpath($candidate);
             $candidate = is_string($real) ? $real : $candidate;
         } else {
-            $candidate = rtrim($configured, '/');
+            $candidate = rtrim(str_replace('\\', '/', $configured), '/');
+            $real = realpath($candidate);
+            $candidate = is_string($real) ? str_replace('\\', '/', $real) : $candidate;
         }
 
         return self::looksLikePlatform($candidate) ? $candidate : null;

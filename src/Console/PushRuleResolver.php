@@ -19,6 +19,7 @@ final class PushRuleResolver
      *     apps: list<string>,
      *     vendor: bool,
      *     theme: bool,
+     *     platform: bool,
      *     app: bool
      * }
      */
@@ -36,6 +37,7 @@ final class PushRuleResolver
             'apps' => $apps,
             'vendor' => in_array('vendor', $parts, true),
             'theme' => in_array('theme', $parts, true),
+            'platform' => in_array('platform', $parts, true),
             'app' => in_array('app', $parts, true),
         ];
     }
@@ -49,10 +51,11 @@ final class PushRuleResolver
 
         if (!is_array($rules) || $rules === []) {
             return [
-                'all' => ['app', 'vendor', 'theme'],
-                'app' => ['app'],
-                'vendor' => ['vendor'],
-                'theme' => ['theme'],
+            'all' => ['app', 'vendor', 'theme', 'platform'],
+            'app' => ['app'],
+            'vendor' => ['vendor'],
+            'theme' => ['theme'],
+            'platform' => ['platform'],
             ];
         }
 
@@ -117,7 +120,7 @@ final class PushRuleResolver
     private static function partsFromCli(array $cli, array $rules, string $ruleName): array
     {
         if (!empty($cli['all'])) {
-            return $rules['all'] ?? ['app', 'vendor', 'theme'];
+            return $rules['all'] ?? ['app', 'vendor', 'theme', 'platform'];
         }
 
         if ($ruleName !== '') {
@@ -125,11 +128,16 @@ final class PushRuleResolver
                 throw new \InvalidArgumentException('Unknown rule "' . $ruleName . '".');
             }
 
-            return $rules[$ruleName];
+            $parts = $rules[$ruleName];
+            if (in_array('theme', $parts, true) && !in_array('app', $parts, true)) {
+                $parts[] = 'app';
+            }
+
+            return array_values(array_unique($parts));
         }
 
         $parts = [];
-        foreach (['vendor', 'theme'] as $part) {
+        foreach (['vendor', 'theme', 'platform'] as $part) {
             if (!empty($cli[$part])) {
                 $parts[] = $part;
             }
@@ -141,6 +149,12 @@ final class PushRuleResolver
             || !empty($cli['all']);
 
         if ($parts === [] || $hasAppPackage) {
+            $parts[] = 'app';
+        }
+
+        // Theme assets live in the app package — rebuild via fe:build + pinx:build
+        // so pinion/SSH can pinx:install the same way as the Pinoox CLI.
+        if (in_array('theme', $parts, true) && !in_array('app', $parts, true)) {
             $parts[] = 'app';
         }
 

@@ -8,9 +8,9 @@ final class PinGateProbe
 {
     public static function missingDeployMessage(string $deployPath = ''): string
     {
-        return 'Run: php pinoox pinroll:gate (uploads pingate.php + gate/ into '
+        return 'Run: php pinoox pinroll:gate (uploads pingate.php into '
             . HostDir::extractGuidePath($deployPath)
-            . ') and set gate { url, token }.';
+            . ') and set PINROLL_*_URL / PINROLL_*_TOKEN.';
     }
 
     /**
@@ -36,10 +36,10 @@ final class PinGateProbe
             '     php pinoox pinroll:gate' . $hostArg . ' -n',
             '  2. Set gate URL to the public site (not the FTP folder name):',
             '     ' . $gateUrlExample,
-            '     Subdomain docroot (FTP folder is the domain root): set web_path => \'\' in pinroll.config.php',
+            '     Subdomain docroot (FTP folder is the domain root): set web_path => \'\' in .pinoox/pinroll.config.php',
             '     URL subdirectory only: set web_path to that path (e.g. \'shop\').',
             '  3. On the host, confirm pingate.php sits next to index.php (FTP list the deploy folder).',
-            '  4. If the URL still returns HTML, paste pinroll/htaccess.snippet rules before the front-controller in the host .htaccess.',
+            '  4. If the URL still returns HTML, paste storage/pinroll/htaccess.snippet rules before the front-controller in the host .htaccess.',
             '  5. Re-check: php pinoox pinroll:check' . $hostArg,
             '     or: php pinoox pinroll:connect' . $hostArg . ' --reset',
         ];
@@ -74,7 +74,7 @@ final class PinGateProbe
                 return [
                     'ok' => false,
                     'deployed' => true,
-                    'message' => 'Token invalid — sync .env with gate/pingate.php on host.',
+                    'message' => 'Token invalid — sync .env with pingate.php on host.',
                 ];
             }
 
@@ -99,7 +99,7 @@ final class PinGateProbe
             return [
                 'ok' => false,
                 'deployed' => true,
-                'message' => 'Token invalid — sync .env with gate/pingate.php on host.',
+                'message' => 'Token invalid — sync .env with pingate.php on host.',
             ];
         }
 

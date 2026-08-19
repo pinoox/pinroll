@@ -12,8 +12,8 @@ use ZipArchive;
  * Export a production-ready platform vendor/ zip for the host.
  *
  * Uses the same PlatformComposer pipeline as pinx:build platform
- * (strip require-dev, materialize path-repos). Pinroll must be in
- * composer.json "require" so it survives --no-dev / strip_require_dev.
+ * (strip require-dev, materialize path-repos). Pinroll on the host is optional:
+ * pingate.php can apply releases through pincore Pinx + Pinion.
  */
 final class VendorPacker
 {
@@ -55,7 +55,7 @@ final class VendorPacker
         }
 
         $root = rtrim($this->paths->root(), '/');
-        $this->assertPinrollInRequire($root);
+        $this->assertComposerPresent($root);
 
         $prepared = PlatformComposer::prepare($root, true, $vendorPrune);
         if (!($prepared['prepared'] ?? false)) {
@@ -71,11 +71,7 @@ final class VendorPacker
         }
 
         if (!$this->pinrollPresent($stagingVendor)) {
-            PlatformComposer::cleanup($root);
-            throw new PinrollException(
-                'Prepared vendor is missing pinoox/pinroll. Add it under composer.json "require" '
-                . '(not require-dev), run composer update, then retry.',
-            );
+            // Host PinGate can run on pincore (Pinx + Pinion) without pinroll in vendor.
         }
 
         $zipPath = $outputZip ?? ProjectPaths::vendorPackZip($this->paths);
@@ -117,7 +113,7 @@ final class VendorPacker
         ];
     }
 
-    private function assertPinrollInRequire(string $root): void
+    private function assertComposerPresent(string $root): void
     {
         $composerFile = $root . '/composer.json';
         if (!is_file($composerFile)) {
@@ -128,19 +124,6 @@ final class VendorPacker
         $data = is_string($raw) ? json_decode($raw, true) : null;
         if (!is_array($data)) {
             throw new PinrollException('Invalid composer.json.');
-        }
-
-        $require = is_array($data['require'] ?? null) ? $data['require'] : [];
-        $requireDev = is_array($data['require-dev'] ?? null) ? $data['require-dev'] : [];
-
-        if (!isset($require['pinoox/pinroll'])) {
-            $hint = isset($requireDev['pinoox/pinroll'])
-                ? 'Move "pinoox/pinroll" from require-dev to require, then run composer update.'
-                : 'Add "pinoox/pinroll" to composer.json require, then run composer update.';
-
-            throw new PinrollException(
-                'pinoox/pinroll must be a production dependency for host vendor packs. ' . $hint,
-            );
         }
     }
 

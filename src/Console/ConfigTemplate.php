@@ -13,6 +13,7 @@ final class ConfigTemplate
  * Pinroll hosts
  *
  * Workflow: pinroll:init → fill .env → pinroll:connect → pinroll:deploy
+ * Config path: .pinoox/pinroll.config.php (legacy: pinroll/pinroll.config.php)
  */
 
 PHP;

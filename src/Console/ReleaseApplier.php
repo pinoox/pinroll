@@ -170,8 +170,13 @@ final class ReleaseApplier
     {
         $deployRoot = HostDir::deployRoot(HostDir::fromTarget($rawTarget));
         $cd = $deployRoot === '.' ? '.' : $deployRoot;
-        $remote = 'cd ' . escapeshellarg($cd) . ' && php pinoox pinroll:install --local'
-            . ($deployId !== '' ? ' ' . escapeshellarg($deployId) : '');
+        $idArg = $deployId !== '' ? ' ' . escapeshellarg($deployId) : '';
+        $incoming = 'storage/pinroll/incoming';
+        $remote = 'cd ' . escapeshellarg($cd)
+            . ' && if php pinoox pinroll:install --local' . $idArg . ' ; then true'
+            . '; else ARCHIVE=$(ls -1t ' . $incoming . '/*.pinx ' . $incoming . '/*.zip 2>/dev/null | head -n 1)'
+            . ' && test -n "$ARCHIVE"'
+            . ' && (php pinoox pinx:update "$ARCHIVE" --force || php pinoox pinx:install "$ARCHIVE" --force); fi';
 
         PushProgress::detail('SSH apply on ' . $ssh['host']);
 

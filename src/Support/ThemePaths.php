@@ -9,28 +9,45 @@ final class ThemePaths
      */
     public static function distFolders(string $platformRoot, string $package): array
     {
-        $themeRoot = rtrim($platformRoot, '/') . '/apps/' . $package . '/theme';
-        if (!is_dir($themeRoot)) {
-            return [];
-        }
+        $root = rtrim(str_replace('\\', '/', $platformRoot), '/');
+        $candidates = [
+            [
+                'dir' => $root . '/apps/' . $package . '/theme',
+                'remote' => 'apps/' . $package . '/theme',
+            ],
+            [
+                'dir' => $root . '/theme',
+                'remote' => 'theme',
+            ],
+        ];
 
         $folders = [];
-        foreach (scandir($themeRoot) ?: [] as $theme) {
-            if ($theme === '.' || $theme === '..') {
+        $seen = [];
+        foreach ($candidates as $candidate) {
+            $themeRoot = $candidate['dir'];
+            if (!is_dir($themeRoot)) {
                 continue;
             }
 
-            $dist = $themeRoot . '/' . $theme . '/dist';
-            if (!is_dir($dist)) {
-                continue;
-            }
+            foreach (scandir($themeRoot) ?: [] as $theme) {
+                if ($theme === '.' || $theme === '..') {
+                    continue;
+                }
 
-            $folders[] = [
-                'package' => $package,
-                'theme' => $theme,
-                'local' => $dist,
-                'remote' => 'apps/' . $package . '/theme/' . $theme . '/dist',
-            ];
+                $dist = $themeRoot . '/' . $theme . '/dist';
+                $key = str_replace('\\', '/', $dist);
+                if (!is_dir($dist) || isset($seen[$key])) {
+                    continue;
+                }
+
+                $seen[$key] = true;
+                $folders[] = [
+                    'package' => $package,
+                    'theme' => $theme,
+                    'local' => $dist,
+                    'remote' => $candidate['remote'] . '/' . $theme . '/dist',
+                ];
+            }
         }
 
         return $folders;

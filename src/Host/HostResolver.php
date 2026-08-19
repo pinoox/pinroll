@@ -32,6 +32,7 @@ final class HostResolver
         }
 
         $host = HostConfig::mergeHostDefaults($loaded, $hosts[$name]);
+        $host = HostEnv::overlay($name, $host);
         $host['name'] = $name;
 
         return HostTransport::resolve($host, $via);
@@ -52,7 +53,7 @@ final class HostResolver
 
         return array_merge(
             ['name' => $name],
-            HostConfig::mergeHostDefaults($loaded, $hosts[$name]),
+            HostEnv::overlay($name, HostConfig::mergeHostDefaults($loaded, $hosts[$name])),
         );
     }
 
@@ -111,9 +112,24 @@ final class HostResolver
         $path = $this->configPath ?? ProjectPaths::configFile($this->pinrollConfig->paths());
 
         if ($path === null || !is_file($path)) {
-            throw new PinrollException(
-                'Pinroll project config not found. Run `php pinoox pinroll:init` or create pinroll/pinroll.config.php manually.'
-            );
+            $synthetic = HostEnv::synthetic('production');
+            if ($synthetic === null) {
+                throw new PinrollException(
+                    'Pinroll project config not found. Run `php pinoox pinroll:init` or create .pinoox/pinroll.config.php (or fill PINROLL_* in .env).'
+                );
+            }
+
+            $this->config = HostConfig::normalizeLoaded([
+                'default_host' => 'production',
+                'keep' => (int) (HostEnv::read('production', 'KEEP') ?? 3),
+                'store' => HostEnv::read('production', 'STORE') ?? 'remote',
+                'auto_clean' => filter_var(HostEnv::read('production', 'AUTO_CLEAN') ?? 'true', FILTER_VALIDATE_BOOLEAN),
+                'hosts' => [
+                    'production' => $synthetic,
+                ],
+            ]);
+
+            return $this->config;
         }
 
         /** @var array<string, mixed> $loaded */

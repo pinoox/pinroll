@@ -37,6 +37,26 @@ final class PincoreBridge
         }
 
         try {
+            $isPlatform = class_exists(\Pinoox\Component\Package\Pinx\PlatformArchive::class)
+                && \Pinoox\Component\Package\Pinx\PlatformArchive::isPlatformArchive($archivePath);
+
+            if ($isPlatform) {
+                $updater = \Pinoox\Portal\Pinx::platformUpdater()->onStep(
+                    static function (string $step, string $status, string $message) use ($session): void {
+                        $session->addStep('install:' . $step, $status, $message);
+                    },
+                );
+                $result = $updater->update($archivePath, [
+                    'force' => !empty($options['force']),
+                ]);
+                $ok = (bool) ($result->success ?? false);
+                if ($ok) {
+                    $this->refreshPinker();
+                }
+
+                return $ok;
+            }
+
             $installer = \Pinoox\Portal\Pinx::installer()->onStep(
                 static function (string $step, string $status, string $message) use ($session): void {
                     $session->addStep('install:' . $step, $status, $message);
@@ -46,8 +66,12 @@ final class PincoreBridge
             $result = $installer->install($archivePath, [
                 'force' => !empty($options['force']),
             ]);
+            $ok = (bool) ($result->success ?? false);
+            if ($ok) {
+                $this->refreshPinker();
+            }
 
-            return (bool) ($result->success ?? false);
+            return $ok;
         } catch (\Throwable $e) {
             $message = $e->getMessage();
             if (str_contains(strtolower($message), 'corrupt zip') || str_contains(strtolower($message), 'zip')) {
@@ -68,6 +92,20 @@ final class PincoreBridge
         }
 
         PlatformBootstrap::ensure($root);
+    }
+
+    private function refreshPinker(): void
+    {
+        if (!class_exists(\Pinoox\Component\Package\Pinx\PlatformPinkerGuard::class)) {
+            return;
+        }
+
+        $root = defined('PINOOX_BASE_PATH') ? (string) PINOOX_BASE_PATH : '';
+        if ($root === '') {
+            return;
+        }
+
+        \Pinoox\Component\Package\Pinx\PlatformPinkerGuard::refreshOverrideTimestamps($root);
     }
 
     public function rollbackMigrations(RolloutSession $session): void

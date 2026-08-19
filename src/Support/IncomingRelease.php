@@ -79,7 +79,7 @@ final class IncomingRelease
         }
 
         $lower = strtolower($archivePath);
-        if (str_ends_with($lower, '.pinx') || str_ends_with($lower, '.pin')) {
+        if (str_ends_with($lower, '.pinx') || str_ends_with($lower, '.pin') || str_ends_with($lower, '.zip')) {
             return $archivePath;
         }
 
@@ -105,6 +105,9 @@ final class IncomingRelease
 
         $matches = glob($workDir . '/*.pinx') ?: [];
         if ($matches === []) {
+            $matches = glob($workDir . '/*.zip') ?: [];
+        }
+        if ($matches === []) {
             $matches = glob($workDir . '/**/*.pinx') ?: [];
         }
 
@@ -123,11 +126,12 @@ final class IncomingRelease
 
         return str_ends_with($lower, '.tar')
             || str_ends_with($lower, '.pinx')
-            || str_ends_with($lower, '.pin');
+            || str_ends_with($lower, '.pin')
+            || str_ends_with($lower, '.zip');
     }
 
     private static function idFromFilename(string $filename): string
     {
-        return preg_replace('/\.(tar|pinx|pin)$/i', '', $filename) ?? $filename;
+        return preg_replace('/\.(tar|pinx|pin|zip)$/i', '', $filename) ?? $filename;
     }
 }

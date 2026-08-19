@@ -31,7 +31,7 @@ final class RetentionPolicy
     public static function cleanAfterInstall(array $host, array $context = []): ?array
     {
         $settings = self::settings($host);
-        if (!$settings['auto_clean'] || $settings['keep'] === 0) {
+        if (!$settings['auto_clean']) {
             return null;
         }
 

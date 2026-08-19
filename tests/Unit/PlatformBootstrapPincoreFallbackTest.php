@@ -86,8 +86,8 @@ PHP);
 
     PlatformBootstrap::ensure($root);
 
-    expect(rtrim((string) PINOOX_CORE_PATH, '/'))
-        ->toBe($root . '/vendor/pinoox/pincore');
+    expect(str_replace('\\', '/', rtrim((string) PINOOX_CORE_PATH, '/\\')))
+        ->toBe(str_replace('\\', '/', $root . '/vendor/pinoox/pincore'));
 
     // cleanup
     $it = new RecursiveIteratorIterator(

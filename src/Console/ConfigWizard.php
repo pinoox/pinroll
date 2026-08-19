@@ -36,7 +36,7 @@ final class ConfigWizard
         $configFile = ProjectPaths::configFile($paths);
 
         $this->io->text([
-            'Creates pinroll/pinroll.config.php step by step.',
+            'Creates .pinoox/pinroll.config.php step by step.',
         ]);
 
         $mode = (string) $this->io->choice(
@@ -72,7 +72,7 @@ final class ConfigWizard
         } while ($this->io->confirm('Add another target?', false));
 
         if ($this->targets === []) {
-            throw new PinrollException('No targets configured. Run pinroll:init again or create pinroll/pinroll.config.php manually.');
+            throw new PinrollException('No targets configured. Run pinroll:init again or create .pinoox/pinroll.config.php manually.');
         }
 
         ConfigWriter::write($configFile, $this->targets);

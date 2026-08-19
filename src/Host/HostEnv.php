@@ -1,0 +1,137 @@
+<?php
+
+namespace Pinoox\Pinroll\Host;
+
+/**
+ * Overlay PINROLL_* env keys onto a host block. Production also reads unscoped PINROLL_VIA / PINROLL_PATH / …
+ */
+final class HostEnv
+{
+    /**
+     * @param array<string, mixed> $host
+     * @return array<string, mixed>
+     */
+    public static function overlay(string $name, array $host): array
+    {
+        $via = self::read($name, 'VIA');
+        if ($via !== null) {
+            $host['via'] = strtolower($via);
+        }
+
+        $path = self::read($name, 'PATH');
+        if ($path !== null) {
+            $host['deploy_path'] = $path;
+            $host['dir'] = $path;
+        }
+
+        $keep = self::read($name, 'KEEP');
+        if ($keep !== null && is_numeric($keep)) {
+            $host['keep'] = (int) $keep;
+        }
+
+        $store = self::read($name, 'STORE');
+        if ($store !== null) {
+            $host['store'] = $store;
+        }
+
+        $autoClean = self::read($name, 'AUTO_CLEAN');
+        if ($autoClean !== null) {
+            $host['auto_clean'] = filter_var($autoClean, FILTER_VALIDATE_BOOLEAN);
+        }
+
+        $apps = self::read($name, 'APPS');
+        if ($apps !== null) {
+            $host['apps'] = $apps === ''
+                ? []
+                : array_values(array_filter(array_map('trim', explode(',', $apps))));
+        }
+
+        $url = self::read($name, 'URL');
+        $token = self::read($name, 'TOKEN');
+        if ($url !== null || $token !== null) {
+            $gate = is_array($host['gate'] ?? null) ? $host['gate'] : [];
+            if ($url !== null) {
+                $gate['url'] = $url;
+            }
+            if ($token !== null) {
+                $gate['token'] = $token;
+            }
+            $host['gate'] = $gate;
+        }
+
+        $ftpHost = self::read($name, 'HOST');
+        $ftpUser = self::read($name, 'USER');
+        $ftpPassword = self::read($name, 'PASSWORD');
+        if ($ftpHost !== null || $ftpUser !== null || $ftpPassword !== null) {
+            $ftp = is_array($host['ftp'] ?? null) ? $host['ftp'] : [];
+            if ($ftpHost !== null) {
+                $ftp['host'] = $ftpHost;
+            }
+            if ($ftpUser !== null) {
+                $ftp['user'] = $ftpUser;
+            }
+            if ($ftpPassword !== null) {
+                $ftp['password'] = $ftpPassword;
+            }
+            $host['ftp'] = $ftp;
+        }
+
+        return $host;
+    }
+
+    /**
+     * Build a host from env alone when no pinroll.config.php exists.
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function synthetic(string $name = 'production'): ?array
+    {
+        $via = strtolower((string) (self::read($name, 'VIA') ?? 'ftp'));
+        $path = self::read($name, 'PATH') ?? 'public_html';
+        $url = self::read($name, 'URL') ?? '';
+        $token = self::read($name, 'TOKEN') ?? '';
+        $host = self::read($name, 'HOST') ?? '';
+        $user = self::read($name, 'USER') ?? '';
+
+        if ($url === '' && $token === '' && $host === '' && $user === '') {
+            return null;
+        }
+
+        $block = [
+            'deploy_path' => $path,
+            'dir' => $path,
+            'via' => $via !== '' ? $via : 'ftp',
+            'gate' => [
+                'url' => $url,
+                'token' => $token,
+            ],
+            'ftp' => [
+                'host' => $host,
+                'user' => $user,
+                'password' => self::read($name, 'PASSWORD') ?? '',
+            ],
+        ];
+
+        return self::overlay($name, $block);
+    }
+
+    public static function read(string $host, string $field): ?string
+    {
+        $field = strtoupper($field);
+        $slug = strtoupper(preg_replace('/[^a-zA-Z0-9]+/', '_', $host) ?: 'PRODUCTION');
+        $keys = ['PINROLL_' . $slug . '_' . $field];
+
+        if (in_array(strtolower($host), ['production', 'prod'], true)) {
+            array_unshift($keys, 'PINROLL_' . $field);
+        }
+
+        foreach ($keys as $key) {
+            $value = $_ENV[$key] ?? $_SERVER[$key] ?? getenv($key);
+            if (is_string($value) && $value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+}

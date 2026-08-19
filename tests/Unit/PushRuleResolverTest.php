@@ -44,8 +44,10 @@ test('push rule resolver combines vendor and theme flags', function () {
 
     $plan = PushRuleResolver::resolve($target, ['vendor' => true, 'theme' => true]);
 
-    expect($plan['parts'])->toBe(['vendor', 'theme']);
-    expect($plan['app'])->toBeFalse();
+    expect($plan['parts'])->toBe(['vendor', 'theme', 'app']);
+    expect($plan['app'])->toBeTrue();
+    expect($plan['theme'])->toBeTrue();
+    expect($plan['vendor'])->toBeTrue();
 });
 
 test('push rule resolver returns empty apps when host has no apps configured', function () {

@@ -28,8 +28,9 @@ final class PinGateHttpHandler
         private readonly RolloutEngine $engine,
     ) {
         $this->auth = new PinGateAuth($config);
-        Pinion::configure(['storage_path' => $config->storage('pinion')]);
-        $this->pinion = Pinion::http(['destination' => (string) $config->get('incoming_path', 'pinroll/incoming')]);
+        $incoming = rtrim($this->paths->root(), '/') . '/storage/pinroll/incoming';
+        Pinion::configure(['storage_path' => $this->paths->storage('pinion')]);
+        $this->pinion = Pinion::http(['destination' => $incoming]);
     }
 
     /**
@@ -41,7 +42,9 @@ final class PinGateHttpHandler
         $path = trim($path, '/');
 
         return match (true) {
-            $method === 'POST' && $path === 'push/init' => $this->pinion->init($input),
+            $method === 'POST' && $path === 'push/init' => $this->pinion->init(array_merge($input, [
+                'destination' => rtrim($this->paths->root(), '/') . '/storage/pinroll/incoming',
+            ])),
             $method === 'POST' && $path === 'push/upload' => $this->pinion->upload($input, $input['chunk'] ?? null),
             $method === 'POST' && $path === 'push/complete' => $this->handleComplete($input),
             $method === 'POST' && ($path === 'install' || $path === 'apply') => $this->handleInstall($input),
@@ -301,6 +304,10 @@ final class PinGateHttpHandler
             'host' => $hostConfig,
         ]);
 
+        if (is_dir($workDir)) {
+            (new StorageCleaner($this->config))->removePath($workDir);
+        }
+
         return ['deploy_id' => $resolvedId];
     }
 
@@ -308,26 +315,30 @@ final class PinGateHttpHandler
     {
         $candidates = array_values(array_filter([
             $configFile,
+            $this->paths->root() . '/pingate.php',
             $this->paths->root() . '/pinroll/gate/pingate.php',
-            $this->paths->root() . '/_pinoox/gate/pingate.php',
-            $this->paths->root() . '/public/_pinoox/gate/pingate.php',
+            $this->paths->root() . '/gate/pingate.php',
         ]));
 
         $gate = null;
         foreach ($candidates as $candidate) {
-            if (is_file($candidate)) {
-                /** @var array<string, mixed> $loaded */
-                $loaded = require $candidate;
-                $gate = $loaded;
-                break;
+            if (!is_file($candidate)) {
+                continue;
             }
+            if (!defined('PINROLL_GATE_AS_CONFIG')) {
+                define('PINROLL_GATE_AS_CONFIG', true);
+            }
+            /** @var array<string, mixed> $loaded */
+            $loaded = require $candidate;
+            $gate = $loaded;
+            break;
         }
 
         if (!is_array($gate)) {
-            return;
+            $gate = [];
         }
 
-        $hash = (string) ($gate['token_hash'] ?? '');
+        $hash = $this->auth->expectedHash($gate, $this->paths->root());
         if ($hash !== '') {
             $this->auth->verifyBearer($authorization, $hash);
         }

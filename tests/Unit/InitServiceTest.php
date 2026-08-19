@@ -12,6 +12,7 @@ test('init scaffolds host and env keys from target name', function () {
 
     expect($result['target'])->toBe('myconnect')
         ->and($result['host'])->toBe('myconnect')
+        ->and(str_replace('\\', '/', $result['config']))->toEndWith('.pinoox/pinroll.config.php')
         ->and($result['env_keys'])->toContain(ConfigWriter::envKeyFor('myconnect', 'host', 'ftp'))
         ->and($result['env_keys'])->toContain(ConfigWriter::envKeyFor('myconnect', 'url', 'pinion'));
 
@@ -30,7 +31,7 @@ test('init scaffolds host and env keys from target name', function () {
         ->and($env)->toContain('PINROLL_MYCONNECT_TOKEN=');
 
     @unlink($result['config']);
-    @rmdir($root . '/pinroll');
+    @rmdir($root . '/.pinoox');
     @unlink($root . '/.env');
     @rmdir($root);
 });
@@ -89,6 +90,28 @@ PHP);
 
     @unlink($result['config']);
     @rmdir($root . '/pinroll');
+    @unlink($root . '/.env');
+    @rmdir($root);
+});
+
+test('init production host writes unscoped PINROLL_* env stubs', function () {
+    $root = sys_get_temp_dir() . '/pinroll-init-prod-' . uniqid('', true);
+    mkdir($root, 0755, true);
+    file_put_contents($root . '/.env', "APP_KEY=test\n");
+
+    $result = (new InitService($root))->run('production', force: true);
+
+    expect(str_replace('\\', '/', $result['config']))->toEndWith('.pinoox/pinroll.config.php');
+
+    $env = file_get_contents($root . '/.env');
+    expect($env)->toContain('PINROLL_VIA=')
+        ->and($env)->toContain('PINROLL_PATH=')
+        ->and($env)->toContain('PINROLL_KEEP=')
+        ->and($env)->toContain('PINROLL_URL=')
+        ->and($env)->toContain('PINROLL_TOKEN=');
+
+    @unlink($result['config']);
+    @rmdir($root . '/.pinoox');
     @unlink($root . '/.env');
     @rmdir($root);
 });

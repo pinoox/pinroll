@@ -4,6 +4,7 @@ namespace Pinoox\Pinroll\Console;
 
 use Pinoox\Pinroll\Exception\PinrollException;
 use Pinoox\Pinroll\Pinroll;
+use Pinoox\Pinroll\Release\BuiltinBundle;
 use Pinoox\Pinroll\Release\ReleaseBundle;
 use Pinoox\Pinroll\Release\ReleaseManifest;
 use Pinoox\Pinroll\Rollout\RolloutSession;
@@ -50,7 +51,7 @@ final class DeployRunner
         $plan = PushRuleResolver::resolve($target, $options);
 
         if ($plan['app'] && $plan['apps'] === []) {
-            throw new PinrollException('No apps found in apps/. Install an app or set apps[] in config.');
+            throw new PinrollException('No apps found. Install an app, set PINROLL_APPS / apps[] in .pinoox/pinroll.config.php, or pass --app=.');
         }
 
         $transportName = (string) $target['transport'];
@@ -65,18 +66,26 @@ final class DeployRunner
         /** @var list<array{archive: string, manifest: ReleaseManifest}> $builds */
         $builds = [];
 
+        $layout = null;
+        try {
+            $layout = \Pinoox\Pinroll\Release\PlatformProfile::fromRoot($root)->layout();
+        } catch (\Throwable) {
+        }
+
         if ($plan['app']) {
             foreach ($plan['apps'] as $package) {
                 PushSteps::start('Build ' . $package . ' (pinx)');
-                $bundle = ReleaseBundle::resolveAuto(
-                    Pinroll::config(),
-                    Pinroll::paths(),
-                    $package,
-                    null,
-                    isset($options['bundle']) && (string) $options['bundle'] !== ''
-                        ? (string) $options['bundle']
-                        : null,
-                );
+                $bundle = $layout === \Pinoox\Pinroll\Release\PlatformProfile::LAYOUT_PINX_ROOT
+                    ? ReleaseBundle::fromRecipe(Pinroll::config(), Pinroll::paths(), BuiltinBundle::forPinxRoot())
+                    : ReleaseBundle::resolveAuto(
+                        Pinroll::config(),
+                        Pinroll::paths(),
+                        $package,
+                        null,
+                        isset($options['bundle']) && (string) $options['bundle'] !== ''
+                            ? (string) $options['bundle']
+                            : null,
+                    );
                 $profile = [
                     'vendor' => $plan['vendor'],
                 ];
@@ -84,6 +93,18 @@ final class DeployRunner
                 PushSteps::done(basename((string) $result['archive']));
                 $builds[] = $result;
             }
+        }
+
+        if ($plan['platform']) {
+            PushSteps::start('Build platform (pinx:build platform)');
+            $bundle = ReleaseBundle::fromRecipe(
+                Pinroll::config(),
+                Pinroll::paths(),
+                BuiltinBundle::platformCore($root),
+            );
+            $platformBuild = Pinroll::builder()->build($bundle, 'platform');
+            PushSteps::done(basename((string) $platformBuild['archive']));
+            $builds[] = $platformBuild;
         }
 
         if ($this->needsUpload($plan)) {
@@ -94,18 +115,16 @@ final class DeployRunner
 
         $transport = Pinroll::transports()->resolve($target);
 
-        if ($plan['app']) {
-            foreach ($builds as $index => $result) {
-                $package = $plan['apps'][$index] ?? 'app';
-                PushSteps::start('Upload ' . $package . ' via ' . $transportName);
-                $transport->send((string) $result['archive'], $result['manifest'], $target, $session);
-                PushSteps::done();
+        foreach ($builds as $index => $result) {
+            $label = $plan['apps'][$index] ?? ($plan['platform'] ? 'platform' : 'app');
+            PushSteps::start('Upload ' . $label . ' via ' . $transportName);
+            $transport->send((string) $result['archive'], $result['manifest'], $target, $session);
+            PushSteps::done();
 
-                $localCopy = LocalArchiveStore::keep((string) $result['archive'], $result['manifest'], $target);
-                if ($localCopy !== null) {
-                    $session->addStep('store', 'ok', 'Local archive kept: ' . basename($localCopy));
-                    PushProgress::detail('Local store: ' . basename($localCopy));
-                }
+            $localCopy = LocalArchiveStore::keep((string) $result['archive'], $result['manifest'], $target);
+            if ($localCopy !== null) {
+                $session->addStep('store', 'ok', 'Local archive kept: ' . basename($localCopy));
+                PushProgress::detail('Local store: ' . basename($localCopy));
             }
         }
 
@@ -113,17 +132,13 @@ final class DeployRunner
             $this->uploadVendorFtp($target, $root, $session);
         }
 
-        if ($plan['theme']) {
-            if ($transportName !== 'ftp') {
-                throw new PinrollException('Theme upload is supported on FTP only for now.');
-            }
-
+        if ($plan['theme'] && $transportName === 'ftp') {
             $this->uploadThemeFtp($target, $plan['apps'], $root, $session);
         }
 
         HookRunner::run($rawHost, ['after_push'], $session, $root, false);
 
-        if ($shouldApply && $plan['app'] && $builds !== []) {
+        if ($shouldApply && $builds !== []) {
             $applier = new ReleaseApplier();
             $lastIndex = array_key_last($builds);
 
@@ -158,6 +173,10 @@ final class DeployRunner
             }
         }
 
+        if ($plan['platform']) {
+            $steps[] = 'Build platform (pinx)';
+        }
+
         if ($this->needsUpload($plan)) {
             $steps[] = 'Connect via ' . $transportName;
         }
@@ -168,6 +187,10 @@ final class DeployRunner
             }
         }
 
+        if ($plan['platform']) {
+            $steps[] = 'Upload platform via ' . $transportName;
+        }
+
         if ($plan['vendor'] && !$plan['app']) {
             $steps[] = 'Upload vendor/ via ' . $transportName;
         }
@@ -176,7 +199,7 @@ final class DeployRunner
             $steps[] = 'Upload theme dist via ' . $transportName;
         }
 
-        if ($apply && $plan['app']) {
+        if ($apply && ($plan['app'] || !empty($plan['platform']))) {
             $steps[] = 'Install release via PinGate';
         }
 
@@ -188,7 +211,7 @@ final class DeployRunner
      */
     private function needsUpload(array $plan): bool
     {
-        return $plan['app'] || $plan['vendor'] || $plan['theme'];
+        return $plan['app'] || $plan['vendor'] || $plan['theme'] || !empty($plan['platform']);
     }
 
     /**
@@ -314,6 +337,13 @@ final class DeployRunner
                 'gate_url' => $target['gate_url'] ?? null,
                 'public_key' => $target['public_key'] ?? null,
             ]);
+        } elseif (!empty($options['apply'])) {
+            (new ReleaseApplier())->applyOnTarget(
+                $target,
+                Pinroll::hosts()->raw($targetName),
+                $build['manifest']->deployId(),
+                $session,
+            );
         }
 
         return $session->toArray();
@@ -377,7 +407,6 @@ final class DeployRunner
             'token_hash' => $hash,
             'created_at' => date('c'),
             'dir' => $dir,
-            'platform_root' => '..',
         ], $zip, $webForUrl, keepLocal: true, withVendor: $withVendor);
 
         $resolvedUrl = $gateUrl !== null ? rtrim($gateUrl, '/') : '';
@@ -411,7 +440,7 @@ final class DeployRunner
             $uploaded = true;
             $exporter->cleanupLocalArtifacts(
                 (string) $export['entry'],
-                ProjectPaths::dir(Pinroll::paths()) . '/htaccess.snippet',
+                ProjectPaths::workDir(Pinroll::paths()) . '/htaccess.snippet',
                 (string) $export['gate_dir'],
             );
             $zipPath = ProjectPaths::deployZip(Pinroll::paths(), $targetName);
@@ -423,7 +452,7 @@ final class DeployRunner
             // Zip-only manual upload: drop loose files, keep the archive.
             $exporter->cleanupLocalArtifacts(
                 (string) $export['entry'],
-                ProjectPaths::dir(Pinroll::paths()) . '/htaccess.snippet',
+                ProjectPaths::workDir(Pinroll::paths()) . '/htaccess.snippet',
                 (string) $export['gate_dir'],
             );
         }
