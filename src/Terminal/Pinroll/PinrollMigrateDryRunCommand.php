@@ -3,6 +3,7 @@
 namespace Pinoox\Terminal\Pinroll;
 
 use Pinoox\Component\Terminal;
+use Pinoox\Pinroll\Console\SetupRunner;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -10,7 +11,10 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-#[AsCommand(name: 'pinroll:migrate:dry-run', description: 'Show pending migrations for the next rollout without applying them')]
+#[AsCommand(
+    name: 'pinroll:migrate:dry-run',
+    description: 'Deprecated — use pinroll:setup --migrate --dry-run',
+)]
 class PinrollMigrateDryRunCommand extends Terminal
 {
     protected function configure(): void
@@ -24,34 +28,25 @@ class PinrollMigrateDryRunCommand extends Terminal
     {
         parent::execute($input, $output);
         $io = new SymfonyStyle($input, $output);
+        $io->warning('pinroll:migrate:dry-run is deprecated. Use: php pinoox pinroll:setup --migrate --dry-run');
 
         $root = defined('PINOOX_BASE_PATH') ? PINOOX_BASE_PATH : getcwd();
-        $pinoox = is_file($root . '/pinoox') ? $root . '/pinoox' : 'pinoox';
-        $pending = [];
-
-        if ($input->getOption('platform')) {
-            $pending['platform'] = $this->migrationStatus($pinoox, 'platform');
-        }
-
         $package = $input->getOption('package');
-        if ($package) {
-            $pending[(string) $package] = $this->migrationStatus($pinoox, (string) $package);
+        $skipPlatform = !$input->getOption('platform') && (is_string($package) && $package !== '');
+
+        try {
+            $result = (new SetupRunner((string) $root, $this->getApplication()))->run($io, $output, [
+                'migrate' => true,
+                'dry_run' => true,
+                'package' => is_string($package) ? $package : null,
+                'skip_platform' => $skipPlatform,
+            ]);
+
+            return !empty($result['ok']) ? Command::SUCCESS : Command::FAILURE;
+        } catch (\Throwable $e) {
+            $io->error($e->getMessage());
+
+            return Command::FAILURE;
         }
-
-        $io->writeln(json_encode(['pending' => $pending], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-        $io->note('Dry-run only lists migration status; Pinroll applies migrations during rollout.');
-
-        return Command::SUCCESS;
-    }
-
-  /**
-     * @return array{output: list<string>, exit_code: int}
-     */
-    private function migrationStatus(string $pinoox, string $package): array
-    {
-        $cmd = 'php ' . escapeshellarg($pinoox) . ' migrate:status ' . escapeshellarg($package) . ' 2>&1';
-        exec($cmd, $output, $code);
-
-        return ['output' => $output, 'exit_code' => $code];
     }
 }

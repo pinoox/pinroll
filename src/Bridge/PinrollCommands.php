@@ -15,6 +15,7 @@ final class PinrollCommands
             \Pinoox\Terminal\Pinroll\PinrollInitCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollConnectCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollProvisionCommand::class,
+            \Pinoox\Terminal\Pinroll\PinrollSetupCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollAppsCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollCheckCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollPushCommand::class,

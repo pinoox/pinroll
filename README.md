@@ -1,6 +1,6 @@
 # Pinroll — Release Rollout Engine
 
-**Pinroll** (`pinoox/pinroll`) **1.3.0** — atomic release rollout, rollback, PinGate delivery, and blank-host provision for Pinoox.
+**Pinroll** (`pinoox/pinroll`) **1.4.0** — atomic release rollout, rollback, PinGate delivery, and blank-host provision for Pinoox.
 
 | Concept | Meaning |
 |---------|---------|
@@ -51,6 +51,7 @@ php pinoox pinroll:deploy --full      # platform + every installed app
 | 5 | `pinroll:vendor --push` | Build production `vendor.zip`, upload, extract on host |
 | 6 | `pinroll:check` | Verify transport + PinGate |
 | 7 | `pinroll:deploy` | Build, upload, and install (go live) |
+| 8 | `pinroll:setup` | Post-deploy migrate + patch (`--seed`, `--config`) |
 
 Single-app (pinx-root): `pinx deploy` forwards to `pinroll:deploy`.
 
@@ -79,6 +80,9 @@ php pinoox pinroll:deploy --full
 php pinoox pinroll:deploy --app=com_pinoox_developer
 php pinoox pinroll:deploy --theme
 php pinoox pinroll:deploy --platform
+php pinoox pinroll:setup
+php pinoox pinroll:setup --dry-run
+php pinoox pinroll:setup --migrate --patch --seed
 php pinoox pinroll:install
 php pinoox pinroll:build --bundle=single-app --package=com_pinoox_developer
 php pinoox pinroll:status
@@ -101,6 +105,7 @@ php pinoox pinroll:pull --server=https://releases.example.com
 - `pinroll:deploy --full` — platform zip (`pinx:update`) plus every installed/discovered app
 - `pinroll:deploy --platform` — `pinx:build platform` then `pinx:update` on the host
 - `pinroll:deploy --theme` — rebuild theme assets (`fe:build`) then include in the app `.pinx` / FTP dist
+- `pinroll:setup` — post-deploy migrate + patch (add `--seed`, `--config`, `--dry-run`)
 - `pinroll:install` — install a staged release (`pinroll:apply` is a deprecated alias)
 - `pinroll:rollback` — switch the host back to a previous release
 - `pinroll:cleanup` — prune local/remote archives by `keep` / `store`
