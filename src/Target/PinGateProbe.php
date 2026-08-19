@@ -103,6 +103,17 @@ final class PinGateProbe
             ];
         }
 
+        if ($status === 503 && str_contains($body, 'Service Unavailable') && !str_starts_with($trimmed, '{')) {
+            return [
+                'ok' => false,
+                'deployed' => true,
+                'message' => 'Host web server returned 503 for pingate.php (not PinGate JSON). '
+                    . 'The site may work but pingate.php crashes or is blocked — check host PHP error log, '
+                    . 're-upload storage/pinroll/pingate.php to public_html/ via cPanel/FTP, then retry.',
+                'hints' => self::notJsonFixSteps($deployPath, $web, $hostName),
+            ];
+        }
+
         if ($status < 200 || $status >= 300) {
             return [
                 'ok' => false,

@@ -113,6 +113,12 @@ final class DeployRunner
             PushSteps::done($this->connectLabel($target, $transportName));
         }
 
+        if ($shouldApply && HostGate::isConfigured($rawHost)) {
+            PushSteps::start('Ensure PinGate');
+            GateMaintainer::ensureBeforeDeploy($targetName, $target, $rawHost, $this);
+            PushSteps::done();
+        }
+
         $transport = Pinroll::transports()->resolve($target);
 
         foreach ($builds as $index => $result) {
@@ -200,6 +206,7 @@ final class DeployRunner
         }
 
         if ($apply && ($plan['app'] || !empty($plan['platform']))) {
+            $steps[] = 'Ensure PinGate';
             $steps[] = 'Install release via PinGate';
         }
 

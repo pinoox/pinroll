@@ -8,6 +8,9 @@ declare(strict_types=1);
  */
 function pinroll_pingate_run(string $root, array $gateConfig = []): void
 {
+    @ini_set('memory_limit', '512M');
+    @set_time_limit(600);
+
     $root = rtrim(str_replace('\\', '/', $root), '/');
     $configFile = $root . '/pingate.php';
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -37,6 +40,27 @@ function pinroll_pingate_run(string $root, array $gateConfig = []): void
         return;
     }
 
+    $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null);
+    if (!pinroll_gate_try_auth($root, $gateConfig, $auth)) {
+        return;
+    }
+
+    if ($method === 'GET' && $path === 'status') {
+        pinroll_handle_light_status($root, $gateConfig);
+
+        return;
+    }
+
+    if ($method === 'POST' && ($path === 'install' || $path === 'apply')) {
+        $input = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($input) || $input === []) {
+            $input = $_POST;
+        }
+        pinroll_handle_direct_install($root, $gateConfig, is_array($input) ? $input : []);
+
+        return;
+    }
+
     try {
         $root = pinroll_resolve_platform_root($root, $gateConfig);
     } catch (Throwable $e) {
@@ -61,8 +85,6 @@ function pinroll_pingate_run(string $root, array $gateConfig = []): void
     if (isset($_FILES['chunk']['tmp_name']) && is_string($_FILES['chunk']['tmp_name'])) {
         $input['chunk'] = $_FILES['chunk']['tmp_name'];
     }
-
-    $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null);
 
     try {
         if (class_exists(\Pinoox\Pinroll\Pinroll::class, true)) {
@@ -966,8 +988,74 @@ function pinroll_assert_gate_auth(string $root, array $gateConfig, ?string $auth
     }
 
     $token = pinroll_extract_bearer($authorization);
-    if ($token === '' || !hash_equals($hash, hash('sha256', $token))) {
+    if ($token === '') {
+        throw new RuntimeException('Missing bearer token.', 401);
+    }
+
+    if (!hash_equals($hash, hash('sha256', $token))) {
         throw new RuntimeException('Invalid token.', 401);
+    }
+}
+
+function pinroll_gate_try_auth(string $root, array $gateConfig, ?string $authorization): bool
+{
+    try {
+        pinroll_assert_gate_auth($root, $gateConfig, $authorization);
+    } catch (RuntimeException $e) {
+        pinroll_gate_json_error((int) ($e->getCode() ?: 401), $e->getMessage());
+
+        return false;
+    }
+
+    return true;
+}
+
+function pinroll_handle_light_status(string $root, array $gateConfig): void
+{
+    $platform = ['ok' => false, 'message' => 'Platform not checked'];
+
+    try {
+        $resolved = pinroll_resolve_platform_root($root, $gateConfig);
+        $autoload = rtrim($resolved, '/') . '/vendor/autoload.php';
+        if (is_file($autoload)) {
+            $platform = ['ok' => true, 'message' => 'Pinx ready'];
+        } else {
+            $platform = ['ok' => false, 'message' => 'Platform not found. Install Pinoox on this host first (missing vendor/autoload.php).'];
+        }
+    } catch (Throwable $e) {
+        $platform = ['ok' => false, 'message' => $e->getMessage()];
+    }
+
+    header('Content-Type: application/json');
+    echo json_encode([
+        'success' => true,
+        'data' => [
+            'status' => 'unknown',
+            'platform' => $platform,
+        ],
+    ], JSON_UNESCAPED_UNICODE);
+}
+
+function pinroll_handle_direct_install(string $root, array $gateConfig, array $input): void
+{
+    try {
+        $root = pinroll_resolve_platform_root($root, $gateConfig);
+    } catch (Throwable $e) {
+        pinroll_gate_json_error(503, $e->getMessage());
+
+        return;
+    }
+
+    pinroll_load_platform_autoload($root);
+
+    try {
+        pinroll_boot_platform_for_setup($root);
+        $incoming = pinroll_incoming_dir($root);
+        $result = pinroll_pincore_install($root, $incoming, $input);
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'data' => $result], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $e) {
+        pinroll_gate_json_error((int) ($e->getCode() ?: 500), $e->getMessage());
     }
 }
 
@@ -1052,7 +1140,12 @@ function pinroll_pincore_apply_archive(string $archive, bool $force): bool
     if ($isPlatform && class_exists(\Pinoox\Portal\Pinx::class)) {
         $result = \Pinoox\Portal\Pinx::platformUpdater()->update($archive, ['force' => $force]);
 
-        return (bool) ($result->success ?? false);
+        if (!($result->success ?? false)) {
+            $message = trim((string) ($result->message ?? $result->error ?? ''));
+            throw new RuntimeException($message !== '' ? $message : 'Platform update failed.');
+        }
+
+        return true;
     }
 
     if (!class_exists(\Pinoox\Portal\Pinx::class)) {
@@ -1061,7 +1154,12 @@ function pinroll_pincore_apply_archive(string $archive, bool $force): bool
 
     $result = \Pinoox\Portal\Pinx::installer()->install($archive, ['force' => $force]);
 
-    return (bool) ($result->success ?? false);
+    if (!($result->success ?? false)) {
+        $message = trim((string) ($result->message ?? $result->error ?? ''));
+        throw new RuntimeException($message !== '' ? $message : 'Package install failed.');
+    }
+
+    return true;
 }
 
 function pinroll_pincore_resolve_archive(string $incoming, ?string $deployId): string

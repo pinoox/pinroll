@@ -45,7 +45,17 @@ final class PinGateClient
      */
     public static function status(string $gateUrlBase, string $token): array
     {
-        return self::request('GET', GateUrl::route($gateUrlBase, 'status'), $token, [], 30);
+        $response = self::request('GET', GateUrl::route($gateUrlBase, 'status'), $token, [], 30);
+        if (($response['success'] ?? false) !== true) {
+            throw new PinrollException((string) ($response['error'] ?? 'PinGate status failed.'));
+        }
+
+        $data = $response['data'] ?? [];
+        if (!is_array($data)) {
+            throw new PinrollException('PinGate status returned invalid response.');
+        }
+
+        return $data;
     }
 
     /**
