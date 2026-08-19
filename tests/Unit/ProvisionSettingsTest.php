@@ -68,7 +68,7 @@ test('provision settings validate matches installer rules', function () {
 
     $errors = ProvisionSettings::validate($bad);
     expect($errors)->not->toBeEmpty()
-        ->and(implode("\n", $errors))->toContain('Database host')
+        ->and(implode("\n", $errors))->toContain('Database username')
         ->and(implode("\n", $errors))->toContain('first name')
         ->and(implode("\n", $errors))->toContain('email')
         ->and(implode("\n", $errors))->toContain('username')

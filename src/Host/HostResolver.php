@@ -4,7 +4,6 @@ namespace Pinoox\Pinroll\Host;
 
 use Pinoox\Pinroll\Exception\PinrollException;
 use Pinoox\Pinroll\Support\Config;
-use Pinoox\Pinroll\Support\ConfigFileLoader;
 use Pinoox\Pinroll\Support\ProjectPaths;
 
 final class HostResolver
@@ -110,8 +109,9 @@ final class HostResolver
         }
 
         $path = $this->configPath ?? ProjectPaths::configFile($this->pinrollConfig->paths());
+        $loaded = HostConfig::loadMerged($path);
 
-        if ($path === null || !is_file($path)) {
+        if (HostConfig::hostBlocks($loaded) === []) {
             $synthetic = HostEnv::synthetic('production');
             if ($synthetic === null) {
                 throw new PinrollException(
@@ -132,9 +132,7 @@ final class HostResolver
             return $this->config;
         }
 
-        /** @var array<string, mixed> $loaded */
-        $loaded = ConfigFileLoader::load($path);
-        $this->config = HostConfig::normalizeLoaded($loaded);
+        $this->config = $loaded;
 
         return $this->config;
     }

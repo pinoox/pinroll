@@ -2,6 +2,8 @@
 
 namespace Pinoox\Pinroll\Host;
 
+use Pinoox\Pinroll\Console\GateUrl;
+
 /**
  * Overlay PINROLL_* env keys onto a host block. Production also reads unscoped PINROLL_VIA / PINROLL_PATH / …
  */
@@ -58,10 +60,17 @@ final class HostEnv
 
         $url = self::read($name, 'URL');
         $token = self::read($name, 'TOKEN');
-        if ($url !== null || $token !== null) {
+        $site = self::read($name, 'SITE');
+        if ($url !== null || $token !== null || $site !== null) {
             $gate = is_array($host['gate'] ?? null) ? $host['gate'] : [];
+            if ($site !== null) {
+                $gate['site'] = $site;
+            }
             if ($url !== null) {
                 $gate['url'] = $url;
+                if ($site === null) {
+                    $gate['site'] = GateUrl::siteFrom($url);
+                }
             }
             if ($token !== null) {
                 $gate['token'] = $token;
@@ -151,10 +160,11 @@ final class HostEnv
         $path = self::read($name, 'PATH') ?? 'public_html';
         $url = self::read($name, 'URL') ?? '';
         $token = self::read($name, 'TOKEN') ?? '';
+        $site = self::read($name, 'SITE') ?? '';
         $host = self::read($name, 'HOST') ?? '';
         $user = self::read($name, 'USER') ?? '';
 
-        if ($url === '' && $token === '' && $host === '' && $user === '') {
+        if ($url === '' && $token === '' && $host === '' && $user === '' && $site === '') {
             return null;
         }
 
@@ -163,6 +173,7 @@ final class HostEnv
             'dir' => $path,
             'via' => $via !== '' ? $via : 'ftp',
             'gate' => [
+                'site' => self::read($name, 'SITE') ?? '',
                 'url' => $url,
                 'token' => $token,
             ],

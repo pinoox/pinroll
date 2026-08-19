@@ -25,11 +25,7 @@ final class ProjectInitializer
 
         if (!is_file($configFile) || $this->force) {
             $name = trim($this->hostName) !== '' ? trim($this->hostName) : 'production';
-            ConfigWriter::writeHosts(
-                $configFile,
-                SampleConfig::hosts($name),
-                SampleConfig::globalDefaults($name),
-            );
+            OverlayWriter::writeStub($configFile, $name);
             $written[] = $configFile;
         }
 

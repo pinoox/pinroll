@@ -2,11 +2,11 @@
 
 namespace Pinoox\Pinroll\Host;
 
-use Pinoox\Pinroll\Console\ConfigWriter;
+use Pinoox\Pinroll\Console\GateUrl;
 use Pinoox\Pinroll\Support\HostDir;
 
 /**
- * PinGate credentials — one top-level gate { url, token } per host (shared by all transports).
+ * PinGate credentials — one top-level gate { site, token } per host (shared by all transports).
  */
 final class HostGate
 {
@@ -15,7 +15,7 @@ final class HostGate
 
     /**
      * @param array<string, mixed> $host Raw or resolved host config
-     * @return array{url: string, token: string}
+     * @return array{url: string, token: string, site: string}
      */
     public static function credentials(array $host, ?string $via = null): array
     {
@@ -23,7 +23,7 @@ final class HostGate
 
         if (is_array($host['gate'] ?? null)) {
             $top = self::readGateArray($host['gate']);
-            if ($top['url'] !== '' || $top['token'] !== '') {
+            if ($top['url'] !== '' || $top['token'] !== '' || $top['site'] !== '') {
                 return $top;
             }
         }
@@ -34,22 +34,22 @@ final class HostGate
             }
 
             $nested = self::readGateArray($host[$transport]['gate'] ?? null);
-            if ($nested['url'] !== '' || $nested['token'] !== '') {
+            if ($nested['url'] !== '' || $nested['token'] !== '' || $nested['site'] !== '') {
                 return $nested;
             }
         }
 
         if (is_array($host['pinion'] ?? null)) {
             $pinion = self::readGateArray($host['pinion']);
-            if ($pinion['url'] !== '' || $pinion['token'] !== '') {
+            if ($pinion['url'] !== '' || $pinion['token'] !== '' || $pinion['site'] !== '') {
                 return $pinion;
             }
         }
 
-        return [
-            'url' => trim((string) ($host['gate_url'] ?? '')),
-            'token' => trim((string) ($host['token'] ?? '')),
-        ];
+        $legacyUrl = trim((string) ($host['gate_url'] ?? ''));
+        $legacyToken = trim((string) ($host['token'] ?? ''));
+
+        return self::normalizeCredentials($legacyUrl, $legacyToken, '');
     }
 
     /**
@@ -68,8 +68,6 @@ final class HostGate
     public static function setupGuide(string $hostName, ?string $via = 'ftp'): array
     {
         unset($via);
-        $urlKey = ConfigWriter::envKeyFor($hostName, 'url', 'pinion');
-        $tokenKey = ConfigWriter::envKeyFor($hostName, 'token', 'pinion');
 
         return [
             'PinGate is not configured for install after upload.',
@@ -83,14 +81,11 @@ final class HostGate
             '   php pinoox pinroll:gate ' . $hostName,
             '   → optional zip: php pinoox pinroll:gate ' . $hostName . ' -z',
             '',
-            '3. Add to .env:',
-            '   ' . $urlKey . '=' . self::exampleUrl(),
-            '   ' . $tokenKey . '=<token from pinroll:gate>',
-            '',
-            '4. Add top-level gate in .pinoox/pinroll.config.php (optional if PINROLL_URL / PINROLL_TOKEN are set):',
+            '3. Share ONE host token with teammates (1Password / copy). Do not --rotate unless you intend to invalidate everyone.',
+            '   Store site origin + token in .pinoox/pinroll.config.php (gitignored):',
             self::configSnippet($hostName),
             '',
-            '5. Push, then install — or go live in one step:',
+            '4. Push, then install — or go live in one step:',
             '   php pinoox pinroll:push ' . $hostName,
             '   php pinoox pinroll:install ' . $hostName,
             '   Or: php pinoox pinroll:deploy ' . $hostName,
@@ -99,15 +94,29 @@ final class HostGate
 
     public static function configSnippet(string $hostName): string
     {
-        $urlKey = ConfigWriter::envKeyFor($hostName, 'url', 'pinion');
-        $tokenKey = ConfigWriter::envKeyFor($hostName, 'token', 'pinion');
+        unset($hostName);
 
         return implode("\n", [
             "'gate' => [",
-            "    'url' => env('{$urlKey}', ''),",
-            "    'token' => env('{$tokenKey}', ''),",
+            "    'site' => 'https://pinoox.com',",
+            "    'token' => '<shared-host-token>',",
             '],',
         ]);
+    }
+
+    public static function redactToken(string $token): string
+    {
+        $token = trim($token);
+        if ($token === '') {
+            return '';
+        }
+
+        $len = strlen($token);
+        if ($len <= 4) {
+            return str_repeat('•', $len);
+        }
+
+        return str_repeat('•', $len - 4) . substr($token, -4);
     }
 
     public static function exampleUrl(?string $dir = null): string
@@ -149,17 +158,34 @@ final class HostGate
 
     /**
      * @param mixed $gate
-     * @return array{url: string, token: string}
+     * @return array{url: string, token: string, site: string}
      */
     private static function readGateArray(mixed $gate): array
     {
         if (!is_array($gate)) {
-            return ['url' => '', 'token' => ''];
+            return ['url' => '', 'token' => '', 'site' => ''];
         }
 
+        $site = trim((string) ($gate['site'] ?? ''));
+        $url = trim((string) ($gate['url'] ?? $gate['gate_url'] ?? ''));
+        $token = trim((string) ($gate['token'] ?? ''));
+
+        return self::normalizeCredentials($url, $token, $site);
+    }
+
+    /**
+     * @return array{url: string, token: string, site: string}
+     */
+    private static function normalizeCredentials(string $url, string $token, string $site): array
+    {
+        $source = $site !== '' ? $site : $url;
+        $expanded = GateUrl::expandOrEmpty($source);
+        $origin = $site !== '' ? GateUrl::siteFrom($site) : GateUrl::siteFrom($url !== '' ? $url : $expanded);
+
         return [
-            'url' => trim((string) ($gate['url'] ?? $gate['gate_url'] ?? '')),
-            'token' => trim((string) ($gate['token'] ?? '')),
+            'url' => $expanded,
+            'token' => $token,
+            'site' => $origin,
         ];
     }
 }

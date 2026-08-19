@@ -41,5 +41,5 @@ test('sample config hosts uses provided host name for env keys', function () {
 
     expect(array_keys($hosts))->toBe(['myconnect']);
     expect($hosts['myconnect']['ftp']['host']['_env'])->toBe('PINROLL_MYCONNECT_HOST');
-    expect($hosts['myconnect']['gate']['url']['_env'])->toBe('PINROLL_MYCONNECT_URL');
+    expect($hosts['myconnect']['gate']['site']['_env'])->toBe('PINROLL_MYCONNECT_SITE');
 });

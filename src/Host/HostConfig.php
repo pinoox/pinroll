@@ -2,12 +2,49 @@
 
 namespace Pinoox\Pinroll\Host;
 
+use Pinoox\Pinroll\Support\ConfigFileLoader;
+
 /**
  * Loads pinroll project config: hosts (or legacy targets), global defaults, per-host merge.
  */
 final class HostConfig
 {
     private static bool $legacyNoticeShown = false;
+
+    /**
+     * Library canonical + optional project overlay (deep merge). Later keys win.
+     * Overlay hosts merge per host: setting gate.site does not wipe library via/ftp.
+     *
+     * @param array<string, mixed> $canonical
+     * @param array<string, mixed> $overlay
+     * @return array<string, mixed>
+     */
+    public static function mergeDocuments(array $canonical, array $overlay): array
+    {
+        $canonical = self::normalizeLoaded($canonical);
+        $overlay = self::normalizeLoaded($overlay);
+
+        return self::normalizeLoaded(array_replace_recursive($canonical, $overlay));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function loadMerged(?string $overlayPath = null): array
+    {
+        $canonical = [];
+        $library = ConfigFileLoader::libraryPath();
+        if (is_file($library)) {
+            $canonical = ConfigFileLoader::load($library);
+        }
+
+        $overlay = [];
+        if ($overlayPath !== null && $overlayPath !== '' && is_file($overlayPath)) {
+            $overlay = ConfigFileLoader::load($overlayPath);
+        }
+
+        return self::mergeDocuments($canonical, $overlay);
+    }
 
     /**
      * @param array<string, mixed> $loaded

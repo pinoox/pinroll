@@ -176,6 +176,7 @@ final class ConfigWriter
 
         return match ($field) {
             'url', 'gate_url' => 'PINROLL_' . $slug . '_URL',
+            'site' => self::layoutEnvKey($target, 'site'),
             'token' => 'PINROLL_' . $slug . '_TOKEN',
             'public_key' => 'PINROLL_' . $slug . '_PUBKEY',
             'host' => 'PINROLL_' . $scope . '_HOST',
@@ -195,6 +196,7 @@ final class ConfigWriter
         $suffix = match ($field) {
             'via' => 'VIA',
             'web_path' => 'WEB_PATH',
+            'site' => 'SITE',
             default => 'PATH',
         };
 
@@ -209,7 +211,7 @@ final class ConfigWriter
 
     public static function isEnvField(string $field): bool
     {
-        return in_array($field, ['gate_url', 'url', 'token', 'public_key', 'host', 'user', 'key', 'password'], true);
+        return in_array($field, ['gate_url', 'url', 'site', 'token', 'public_key', 'host', 'user', 'key', 'password'], true);
     }
 
     /**
@@ -236,9 +238,9 @@ final class ConfigWriter
             return;
         }
 
-        $block = ConfigTemplate::renderHostBlock(
+        $block = ConfigTemplate::renderOverlayHostBlock(
             $hostName,
-            $host ?? SampleConfig::productionHost($hostName),
+            $host ?? [],
         );
 
         // Insert before the closing of the hosts array: "    ]," then "];"

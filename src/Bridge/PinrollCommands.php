@@ -18,6 +18,7 @@ final class PinrollCommands
             \Pinoox\Terminal\Pinroll\PinrollSetupCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollAppsCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollCheckCommand::class,
+            \Pinoox\Terminal\Pinroll\PinrollConfigCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollPushCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollDeployCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollGateInitCommand::class,

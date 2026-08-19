@@ -105,6 +105,7 @@ final class InitService
             ConfigWriter::envKeyFor($targetName, 'host', 'ftp') => '',
             ConfigWriter::envKeyFor($targetName, 'user', 'ftp') => '',
             ConfigWriter::envKeyFor($targetName, 'password', 'ftp') => '',
+            ConfigWriter::envKeyFor($targetName, 'site', 'pinion') => '',
             ConfigWriter::envKeyFor($targetName, 'url', 'pinion') => '',
             ConfigWriter::envKeyFor($targetName, 'token', 'pinion') => '',
         ];
@@ -119,6 +120,7 @@ final class InitService
                 'PINROLL_AUTO_CLEAN' => 'true',
                 'PINROLL_APPS' => '',
                 'PINROLL_URL' => '',
+                'PINROLL_SITE' => '',
                 'PINROLL_TOKEN' => '',
                 'PINROLL_HOST' => '',
                 'PINROLL_USER' => '',

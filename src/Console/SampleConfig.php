@@ -57,8 +57,10 @@ final class SampleConfig
      */
     public static function gateBlock(string $name, string $gateUrl = ''): array
     {
+        $site = GateUrl::siteFrom($gateUrl);
+
         return [
-            'url' => ['_env' => ConfigWriter::envKeyFor($name, 'url', 'pinion'), 'default' => $gateUrl],
+            'site' => ['_env' => ConfigWriter::envKeyFor($name, 'site', 'pinion'), 'default' => $site],
             'token' => ['_env' => ConfigWriter::envKeyFor($name, 'token', 'pinion'), 'default' => ''],
         ];
     }

@@ -48,7 +48,10 @@ final class TargetHostSetup
             $gateUrl = self::askPinGateUrl($io, null);
 
             if ($dir !== HostDir::fromTarget($target)) {
-                ConfigWriter::setTargetDir(ProjectPaths::configFile($paths), $targetName, $dir);
+                OverlayWriter::patch(ProjectPaths::configFile($paths), $targetName, [
+                    'deploy_path' => $dir,
+                    'dir' => $dir,
+                ]);
             }
 
             return [
@@ -92,7 +95,10 @@ final class TargetHostSetup
             $gateUrl = self::askPinGateUrl($io, null, '');
 
             if ($dir !== HostDir::fromTarget($raw)) {
-                ConfigWriter::setTargetDir(ProjectPaths::configFile($paths), $targetName, $dir);
+                OverlayWriter::patch(ProjectPaths::configFile($paths), $targetName, [
+                    'deploy_path' => $dir,
+                    'dir' => $dir,
+                ]);
             }
 
             return [

@@ -1,6 +1,6 @@
 # Pinroll — Release Rollout Engine
 
-**Pinroll** (`pinoox/pinroll`) **1.4.2** — atomic release rollout, rollback, PinGate delivery, and blank-host provision for Pinoox.
+**Pinroll** (`pinoox/pinroll`) **1.5.0** — atomic release rollout, rollback, PinGate delivery, and blank-host provision for Pinoox.
 
 | Concept | Meaning |
 |---------|---------|
@@ -33,7 +33,7 @@ Put Pinroll in `require` only if you want PinGate to use Pinroll classes on the 
 
 ```bash
 php pinoox pinroll:init
-# fill PINROLL_* credentials in .env (and PINROLL_DB_* / PINROLL_ADMIN_* for a blank host)
+# fill FTP/SSH in .pinoox/pinroll.config.php or .env
 php pinoox pinroll:provision          # first install on empty FTP
 # later:
 php pinoox pinroll:connect
@@ -73,6 +73,7 @@ If `pinroll:check` reports **Not PinGate JSON**, upload `pingate.php` next to `i
 php pinoox pinroll:init
 php pinoox pinroll:provision
 php pinoox pinroll:connect
+php pinoox pinroll:config
 php pinoox pinroll:apps
 php pinoox pinroll:push
 php pinoox pinroll:deploy
@@ -95,9 +96,10 @@ php pinoox pinroll:vendor --push
 php pinoox pinroll:pull --server=https://releases.example.com
 ```
 
-- `pinroll:init` — scaffold `.pinoox/pinroll.config.php` + `.env` key stubs (legacy `pinroll/pinroll.config.php` still loads)
+- `pinroll:init` — scaffold a short `.pinoox/pinroll.config.php` overlay + `.env` key stubs (canonical defaults live in the Pinroll library)
 - `pinroll:provision` — blank-host install: PinGate + `platform.zip` extract + installer setup (welcome/manager router, installer disabled; `--setup-only` to retry setup)
-- `pinroll:connect` — configure host + upload PinGate; verifies if already set (`--reset` to redo)
+- `pinroll:connect` — configure host + upload PinGate; writes **site origin + token** into the overlay; verifies if already set (`--reset` to redo)
+- `pinroll:config` — print resolved host (origin, gate URL, via, path, token redacted)
 - `pinroll:apps` — set `hosts.*.apps` (interactive or `--apps=`)
 - `pinroll:check` — verify host connectivity before push
 - `pinroll:push` — build and upload only (no install)

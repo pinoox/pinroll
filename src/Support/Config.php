@@ -59,8 +59,8 @@ final class Config
      */
     private function loadDefaults(): array
     {
-        $file = dirname(__DIR__, 2) . '/config/pinroll.php';
+        $file = ConfigFileLoader::libraryPath();
 
-        return is_file($file) ? (require $file) : [];
+        return is_file($file) ? ConfigFileLoader::load($file) : [];
     }
 }

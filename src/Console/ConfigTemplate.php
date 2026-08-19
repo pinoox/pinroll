@@ -18,6 +18,113 @@ final class ConfigTemplate
 
 PHP;
 
+    private const OVERLAY_HEADER = <<<'PHP'
+<?php
+
+/**
+ * Pinroll project overlay (gitignored with .pinoox/).
+ *
+ * Canonical schema: vendor/pinoox/pinroll/config/pinroll.php
+ * Override any key. Secrets (token, FTP password) belong here.
+ *
+ * One token per host — share it with teammates. `pinroll:gate --rotate`
+ * uploads a new hash and invalidates everyone else.
+ */
+
+PHP;
+
+    /**
+     * Short overlay stub — not a dump of the library schema.
+     *
+     * @param array<string, mixed> $hostPatch
+     */
+    public static function renderOverlayStub(string $hostName, array $hostPatch = []): string
+    {
+        $hostName = trim($hostName) !== '' ? trim($hostName) : 'production';
+        $lines = [
+            rtrim(self::OVERLAY_HEADER),
+            '',
+            'return [',
+            "    'default_host' => " . var_export($hostName, true) . ',',
+            '',
+            '    // Optional global overrides (uncomment to change library defaults)',
+            "    // 'keep' => 3,",
+            "    // 'store' => 'remote',",
+            '',
+            "    'hosts' => [",
+        ];
+        $lines = array_merge($lines, self::renderOverlayHost($hostName, $hostPatch));
+        $lines[] = '    ],';
+        $lines[] = '];';
+        $lines[] = '';
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * @param array<string, mixed> $host
+     */
+    public static function renderOverlayHostBlock(string $name, array $host = []): string
+    {
+        return implode("\n", self::renderOverlayHost($name, $host)) . "\n";
+    }
+
+    /**
+     * @param array<string, mixed> $host
+     * @return list<string>
+     */
+    private static function renderOverlayHost(string $name, array $host = []): array
+    {
+        $site = '';
+        $token = '';
+        if (is_array($host['gate'] ?? null)) {
+            $site = (string) ($host['gate']['site'] ?? GateUrl::siteFrom((string) ($host['gate']['url'] ?? '')));
+            $token = (string) ($host['gate']['token'] ?? '');
+        }
+
+        $lines = [
+            '        ' . var_export($name, true) . ' => [',
+        ];
+
+        if (array_key_exists('deploy_path', $host) || array_key_exists('dir', $host)) {
+            $deploy = (string) ($host['deploy_path'] ?? $host['dir'] ?? 'public_html');
+            $lines[] = "            'deploy_path' => " . var_export($deploy, true) . ',';
+        }
+
+        if (array_key_exists('web_path', $host)) {
+            $lines[] = "            'web_path' => " . var_export(HostDir::normalize((string) $host['web_path']), true) . ',';
+        }
+
+        if (array_key_exists('via', $host)) {
+            $via = (string) ($host['via'] ?: 'ftp');
+            $lines[] = "            'via' => " . var_export($via, true) . ',';
+        } else {
+            $lines[] = "            'via' => 'ftp',";
+        }
+
+        $lines[] = "            'gate' => [";
+        $lines[] = "                'site' => " . var_export($site, true) . ',  // origin only, e.g. https://pinoox.com';
+        $lines[] = "                'token' => " . var_export($token, true) . ',  // shared host token';
+        $lines[] = '            ],';
+
+        if (is_array($host['ftp'] ?? null) && trim((string) ($host['ftp']['password'] ?? '')) !== '') {
+            $lines[] = "            'ftp' => [";
+            $lines[] = "                'password' => " . var_export((string) $host['ftp']['password'], true) . ',';
+            $lines[] = '            ],';
+        } else {
+            $lines[] = "            // 'ftp' => [";
+            $lines[] = "            //     'host' => '',";
+            $lines[] = "            //     'user' => '',";
+            $lines[] = "            //     'password' => '',";
+            $lines[] = '            // ],';
+        }
+
+        $lines[] = '        ],';
+        $lines[] = '';
+
+        return $lines;
+    }
+
     /**
      * @param array<string, array<string, mixed>> $hosts
      * @param array<string, mixed> $globals
@@ -236,7 +343,7 @@ PHP;
             '            /**',
             '             * Pinion — chunked HTTP upload through PinGate',
             '             *',
-            "             * Set 'via' => 'pinion'. Credentials live in gate { url, token } above.",
+            "             * Set 'via' => 'pinion'. Credentials live in gate { site, token } above.",
             '             * Optional one-time FTP bootstrap: pinroll:connect --bootstrap-ftp',
             '             */',
         ];
@@ -278,7 +385,7 @@ PHP;
     {
         return [
             "            'gate' => [",
-            "                'url' => env('" . ConfigWriter::envKeyFor($target, 'url', 'pinion') . "', ''),",
+            "                'site' => env('" . ConfigWriter::envKeyFor($target, 'site', 'pinion') . "', ''),",
             "                'token' => env('" . ConfigWriter::envKeyFor($target, 'token', 'pinion') . "', ''),",
             '            ],',
         ];

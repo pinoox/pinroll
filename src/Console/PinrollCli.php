@@ -119,8 +119,6 @@ final class PinrollCli
         $zip = (string) ($data['zip'] ?? '');
         $extractTo = (string) ($data['extract_to'] ?? '');
         $uploaded = (bool) ($data['uploaded'] ?? false);
-        $urlKey = (string) ($data['url_key'] ?? 'PINROLL_' . strtoupper($target) . '_URL');
-        $tokenKey = (string) ($data['token_key'] ?? 'PINROLL_' . strtoupper($target) . '_TOKEN');
 
         $displayUrl = $isExample
             ? \Pinoox\Pinroll\Target\TargetGate::exampleUrl($dir !== '' ? $dir : null)
@@ -131,13 +129,23 @@ final class PinrollCli
 
         if ($token !== '') {
             $reused = (bool) ($data['token_reused'] ?? false);
-            $io->section($reused ? 'Token (reused from .env — hash matches host)' : 'Token (written to .env)');
+            $io->section($reused ? 'Token (reused — hash matches host)' : 'Token (written to overlay)');
             $io->writeln('  <info>' . self::escape($token) . '</info>');
             if ($reused) {
-                $io->writeln('  <fg=gray>Rotate:</> <comment>php pinoox pinroll:gate ' . $target . ' --rotate</comment>');
+                $io->writeln('  <fg=gray>Rotate (invalidates teammates):</> <comment>php pinoox pinroll:gate ' . $target . ' --rotate</comment>');
             } else {
-                $io->writeln('  <fg=gray>Already saved to .env as</> <comment>' . self::escape($tokenKey) . '</comment>');
+                $overlay = (string) ($data['overlay_path'] ?? $data['env_path'] ?? '.pinoox/pinroll.config.php');
+                $io->writeln('  <fg=gray>Saved to</> <comment>' . self::escape(self::relPath($overlay)) . '</comment> <fg=gray>as gate.token</>');
             }
+        }
+
+        $site = (string) ($data['site'] ?? '');
+        if ($site === '' && $displayUrl !== '') {
+            $site = \Pinoox\Pinroll\Console\GateUrl::siteFrom($displayUrl);
+        }
+        if ($site !== '') {
+            $io->section('Site origin');
+            $io->writeln('  <comment>' . self::escape($site) . '</comment>');
         }
 
         if ($displayUrl !== '') {
@@ -145,18 +153,13 @@ final class PinrollCli
             $io->writeln('  <comment>' . self::escape($displayUrl) . '</comment>');
         }
 
-        $io->section('.env');
-        $io->writeln([
-            '  <fg=yellow>' . self::escape($urlKey) . '</>=' . self::escape($displayUrl !== '' ? $displayUrl : \Pinoox\Pinroll\Target\TargetGate::exampleUrl()),
-            '  <fg=yellow>' . self::escape($tokenKey) . '</>=' . ($token !== '' ? self::escape($token) : '<token>'),
-        ]);
-
-        $io->section('pinroll.config.php — top-level gate');
+        $io->section('.pinoox/pinroll.config.php');
         $io->writeln([
             "  <fg=gray>'gate' => [</>",
-            "      'url' => env('{$urlKey}', ''),",
-            "      'token' => env('{$tokenKey}', ''),",
+            "      'site' => '" . self::escape($site !== '' ? $site : 'https://example.com') . "',",
+            "      'token' => '" . ($token !== '' ? self::escape($token) : '<shared-host-token>') . "',",
             '  ],',
+            '  <fg=gray>One token per host. Do not --rotate unless you intend to invalidate teammates.</>',
         ]);
 
         if ($uploaded) {
@@ -216,7 +219,7 @@ final class PinrollCli
         $io->newLine();
         $io->section('Next steps');
         $io->writeln([
-            '  <fg=yellow>1.</> Set FTP credentials in <comment>.env</comment>:',
+            '  <fg=yellow>1.</> Set FTP credentials in <comment>.pinoox/pinroll.config.php</comment> or <comment>.env</comment>:',
             '       ' . $hostKey . '=',
             '       ' . $userKey . '=',
             '       ' . $passKey . '=',
@@ -226,6 +229,7 @@ final class PinrollCli
             '',
             '  <fg=yellow>3.</> Existing site — connect & upload PinGate:',
             '       <comment>php pinoox pinroll:connect' . $hostArg . '</comment>',
+            '       <fg=gray>Writes site origin + shared token into the overlay (not .env).</>',
             '',
             '  <fg=yellow>4.</> Go live / update:',
             '       <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>',
@@ -501,6 +505,29 @@ final class PinrollCli
         }
 
         self::printCheckHints($io, $result['checks'] ?? []);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    public static function printResolvedConfig(SymfonyStyle $io, array $row): void
+    {
+        $name = (string) ($row['host'] ?? 'unknown');
+        $io->writeln('<info>' . self::escape($name) . '</info>');
+        $io->writeln('  <fg=gray>via</>         <comment>' . self::escape((string) ($row['via'] ?? '')) . '</comment>');
+        $io->writeln('  <fg=gray>deploy_path</> <comment>' . self::escape((string) ($row['deploy_path'] ?? '')) . '</comment>');
+        if ((string) ($row['web_path'] ?? '') !== '') {
+            $io->writeln('  <fg=gray>web_path</>    <comment>' . self::escape((string) $row['web_path']) . '</comment>');
+        }
+        $io->writeln('  <fg=gray>site</>        <comment>' . self::escape((string) ($row['site'] ?? '')) . '</comment>');
+        $io->writeln('  <fg=gray>gate</>        <comment>' . self::escape((string) ($row['gate_url'] ?? '')) . '</comment>');
+        $token = (string) ($row['token_redacted'] ?? '');
+        $io->writeln('  <fg=gray>token</>       <comment>' . self::escape($token !== '' ? $token : '(empty)') . '</comment>');
+        if ((string) ($row['ftp_host'] ?? '') !== '') {
+            $io->writeln('  <fg=gray>ftp</>         <comment>' . self::escape((string) $row['ftp_host']) . '</comment>'
+                . ((string) ($row['ftp_user'] ?? '') !== '' ? ' <fg=gray>(' . self::escape((string) $row['ftp_user']) . ')</>' : ''));
+        }
+        $io->newLine();
     }
 
     /**

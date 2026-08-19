@@ -12,6 +12,41 @@ final class GateUrl
         return HostDir::gateUrlFromDomain($domain, $hostDir);
     }
 
+    public static function expand(string $input, ?string $hostDir = null): string
+    {
+        return self::normalizeInput($input, $hostDir);
+    }
+
+    public static function expandOrEmpty(string $input, ?string $hostDir = null): string
+    {
+        $input = trim($input);
+        if ($input === '') {
+            return '';
+        }
+
+        try {
+            return self::expand($input, $hostDir);
+        } catch (InvalidArgumentException) {
+            return $input;
+        }
+    }
+
+    /**
+     * Origin only (no /pingate.php?route=). Accepts a full gate URL or a site URL.
+     */
+    public static function siteFrom(string $input): string
+    {
+        $input = trim($input);
+        if ($input === '') {
+            return '';
+        }
+
+        $input = (string) preg_replace('#\?route=.*$#i', '', $input);
+        $input = (string) preg_replace('#/pingate\.php/?$#i', '', $input);
+
+        return rtrim($input, '/');
+    }
+
     public static function normalizeInputOrEmpty(string $input, ?string $hostDir = null): string
     {
         $input = trim($input);

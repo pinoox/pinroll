@@ -6,7 +6,6 @@ use InvalidArgumentException;
 use Pinoox\Pinroll\Exception\PinrollException;
 use Pinoox\Pinroll\Host\HostGate;
 use Pinoox\Pinroll\Pinroll;
-use Pinoox\Pinroll\Support\ConfigFileLoader;
 use Pinoox\Pinroll\Support\HostDir;
 use Pinoox\Pinroll\Support\NativePathResolver;
 use Pinoox\Pinroll\Support\PinrollAutoloader;
@@ -40,14 +39,15 @@ final class ConnectService
         $paths = new NativePathResolver($this->projectRoot);
         $configFile = ProjectPaths::configFile($paths);
 
-        if (!is_file($configFile)) {
-            throw new PinrollException(
-                'Pinroll is not initialized. Run: php pinoox pinroll:init',
-            );
-        }
-
         Pinroll::boot($paths);
-        $raw = Pinroll::hosts()->raw($hostName);
+
+        try {
+            $raw = Pinroll::hosts()->raw($hostName);
+        } catch (PinrollException) {
+            OverlayWriter::patch($configFile, $hostName, ['via' => 'ftp']);
+            Pinroll::boot($paths);
+            $raw = Pinroll::hosts()->raw($hostName);
+        }
         $resolvedVia = strtolower(trim($via ?? (string) ($raw['via'] ?? 'ftp')));
         if ($resolvedVia === '') {
             $resolvedVia = 'ftp';
@@ -98,9 +98,9 @@ final class ConnectService
         ));
 
         $gate = HostGate::credentials($raw, $resolvedVia);
-        $siteDefault = $gate['url'] !== ''
-            ? (string) preg_replace('#/pingate\.php.*$#i', '', rtrim($gate['url'], '/'))
-            : '';
+        $siteDefault = $gate['site'] !== ''
+            ? $gate['site']
+            : ($gate['url'] !== '' ? GateUrl::siteFrom($gate['url']) : '');
         $siteUrl = trim((string) $io->ask(
             'Site URL (e.g. https://apps.example.com)',
             $siteDefault !== '' ? $siteDefault : null,
@@ -109,13 +109,22 @@ final class ConnectService
             throw new PinrollException('Site URL is required.');
         }
 
-        // Use the site URL as entered — do not mix FTP folder into the URL.
-        $gateUrl = $this->resolveGateUrl($siteUrl);
+        $siteUrl = GateUrl::siteFrom($this->resolveGateUrl($siteUrl));
+        $gateUrl = GateUrl::expand($siteUrl);
         $webPath = HostDir::dirFromGateUrl($gateUrl);
+        $io->writeln('  <fg=gray>Site:</> <comment>' . $siteUrl . '</comment>');
         $io->writeln('  <fg=gray>PinGate URL:</> <comment>' . $gateUrl . '</comment>');
 
+        $ftpPassword = null;
+        if ($resolvedVia === 'ftp') {
+            $ftpPassword = self::envOr(
+                ConfigWriter::envKeyFor($hostName, 'password', 'ftp'),
+                $raw['ftp']['password'] ?? null,
+            );
+        }
+
         $saveVia = $bootstrapFtp ? 'pinion' : $resolvedVia;
-        $this->saveHost($configFile, $hostName, $dir, $gateUrl, $saveVia, $webPath);
+        $this->saveHost($configFile, $hostName, $dir, $siteUrl, $saveVia, $webPath, $ftpPassword);
         Pinroll::boot($paths);
 
         $upload = $resolvedVia !== 'pinion';
@@ -182,6 +191,9 @@ final class ConnectService
         $io->section('Connect — ' . $hostName . ' (' . $resolvedVia . ')');
         $io->writeln('  <fg=gray>Status</>   <info>configured</info> <fg=gray>(use --reset to run setup again)</>');
         $io->writeln('  <fg=gray>Deploy path</>  <comment>' . $deployPath . '</comment>');
+        if ($gate['site'] !== '') {
+            $io->writeln('  <fg=gray>Site</>        <comment>' . $gate['site'] . '</comment>');
+        }
         if ($gate['url'] !== '') {
             $io->writeln('  <fg=gray>PinGate URL</>  <comment>' . $gate['url'] . '</comment>');
         }
@@ -241,18 +253,29 @@ final class ConnectService
 
         if ($host === '' || $user === '') {
             $io->error([
-                'FTP is not configured in .env yet.',
-                'Set these keys, then run pinroll:connect again:',
+                'FTP is not configured yet.',
+                'Set host/user in .pinoox/pinroll.config.php or .env, then run pinroll:connect again:',
                 '  ' . $hostKey . '=',
                 '  ' . $userKey . '=',
                 '  ' . $passKey . '=',
             ]);
 
-            throw new PinrollException('Missing FTP credentials in .env');
+            throw new PinrollException('Missing FTP credentials');
         }
 
-        if ($password === '' && !$io->confirm('FTP password is empty. Continue anyway?', false)) {
-            throw new PinrollException('FTP password required in .env (' . $passKey . ')');
+        if ($password === '') {
+            $entered = $io->askHidden('FTP password');
+            if (is_string($entered) && trim($entered) !== '') {
+                OverlayWriter::patch(
+                    ProjectPaths::configFile(new NativePathResolver($this->projectRoot)),
+                    $hostName,
+                    ['ftp' => ['password' => trim($entered)]],
+                );
+                $raw['ftp'] = is_array($raw['ftp'] ?? null) ? $raw['ftp'] : [];
+                $raw['ftp']['password'] = trim($entered);
+            } elseif (!$io->confirm('FTP password is empty. Continue anyway?', false)) {
+                throw new PinrollException('FTP password required');
+            }
         }
     }
 
@@ -268,7 +291,7 @@ final class ConnectService
         $user = self::envOr($userKey, $raw['ssh']['user'] ?? null);
 
         if ($host === '' || $user === '') {
-            throw new PinrollException('Missing SSH credentials in .env for host ' . $hostName);
+            throw new PinrollException('Missing SSH credentials for host ' . $hostName);
         }
     }
 
@@ -297,31 +320,30 @@ final class ConnectService
         }
     }
 
-    private function saveHost(string $configFile, string $hostName, string $dir, string $gateUrl, string $via, ?string $webPath = null): void
-    {
-        $loaded = ConfigFileLoader::load($configFile);
-        /** @var array<string, array<string, mixed>> $hosts */
-        $hosts = is_array($loaded['hosts'] ?? null) ? $loaded['hosts'] : [];
-        if ($hosts === [] && is_array($loaded['targets'] ?? null)) {
-            $hosts = $loaded['targets'];
-        }
-
-        if (!isset($hosts[$hostName]) || !is_array($hosts[$hostName])) {
-            $hosts[$hostName] = SampleConfig::productionHost($hostName);
-        }
-
-        $hosts[$hostName]['deploy_path'] = $dir;
-        $hosts[$hostName]['dir'] = $dir;
+    private function saveHost(
+        string $configFile,
+        string $hostName,
+        string $dir,
+        string $siteUrl,
+        string $via,
+        ?string $webPath = null,
+        ?string $ftpPassword = null,
+    ): void {
+        $patch = [
+            'deploy_path' => $dir,
+            'dir' => $dir,
+            'via' => $via,
+            'gate' => [
+                'site' => GateUrl::siteFrom($siteUrl),
+            ],
+        ];
         if ($webPath !== null) {
-            $hosts[$hostName]['web_path'] = $webPath;
+            $patch['web_path'] = $webPath;
         }
-        $hosts[$hostName]['via'] = $via;
-        $hosts[$hostName]['gate'] = SampleConfig::gateBlock($hostName, $gateUrl);
-
-        if (!isset($hosts[$hostName]['ftp']) || !is_array($hosts[$hostName]['ftp'])) {
-            $hosts[$hostName]['ftp'] = SampleConfig::productionHost($hostName)['ftp'];
+        if ($ftpPassword !== null && $ftpPassword !== '') {
+            $patch['ftp'] = ['password' => $ftpPassword];
         }
 
-        ConfigWriter::writeHosts($configFile, $hosts, SampleConfig::globalDefaults());
+        OverlayWriter::patch($configFile, $hostName, $patch);
     }
 }

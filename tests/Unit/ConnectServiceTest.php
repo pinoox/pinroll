@@ -48,6 +48,7 @@ test('connect setup is incomplete when deploy path is missing', function () {
 return [
     'hosts' => [
         'production' => [
+            'deploy_path' => '',
             'via' => 'ftp',
             'gate' => [
                 'url' => 'https://example.com/pingate.php?route=',

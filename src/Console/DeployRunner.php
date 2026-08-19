@@ -421,11 +421,8 @@ final class DeployRunner
             }
         }
 
-        $envPath = Pinroll::paths()->root() . '/.env';
-        EnvFileWriter::merge($envPath, [
-            $keys['url'] => $resolvedUrl,
-            $keys['token'] => $token,
-        ]);
+        $site = GateUrl::siteFrom($resolvedUrl);
+        $persistPath = OverlayWriter::persistGate($this->projectRoot ?? Pinroll::paths()->root(), $targetName, $site, $token);
 
         $uploaded = false;
         $uploadInfo = null;
@@ -465,8 +462,10 @@ final class DeployRunner
             'dir' => $dir,
             'token' => $token,
             'token_reused' => $tokenReused,
-            'env_path' => $envPath,
+            'env_path' => $persistPath,
+            'overlay_path' => $persistPath,
             'gate_url' => $resolvedUrl,
+            'site' => $site,
             'gate_url_is_example' => !$gateUrlFromUser,
             'token_key' => $keys['token'],
             'url_key' => $keys['url'],

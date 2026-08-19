@@ -45,6 +45,43 @@ test('host config resolves default host name', function () {
         ->toBeNull();
 });
 
+test('host config merges overlay host keys without wiping library via and ftp', function () {
+    $canonical = [
+        'default_host' => 'production',
+        'keep' => 3,
+        'hosts' => [
+            'production' => [
+                'via' => 'ftp',
+                'deploy_path' => 'public_html',
+                'gate' => ['site' => '', 'token' => ''],
+                'ftp' => ['host' => '', 'user' => '', 'password' => ''],
+            ],
+        ],
+    ];
+    $overlay = [
+        'hosts' => [
+            'production' => [
+                'gate' => [
+                    'site' => 'https://pinoox.com',
+                    'token' => 'shared-token',
+                ],
+            ],
+            'staging' => [
+                'via' => 'ssh',
+            ],
+        ],
+    ];
+
+    $merged = HostConfig::mergeDocuments($canonical, $overlay);
+
+    expect($merged['hosts']['production']['via'])->toBe('ftp')
+        ->and($merged['hosts']['production']['deploy_path'])->toBe('public_html')
+        ->and($merged['hosts']['production']['ftp']['host'])->toBe('')
+        ->and($merged['hosts']['production']['gate']['site'])->toBe('https://pinoox.com')
+        ->and($merged['hosts']['production']['gate']['token'])->toBe('shared-token')
+        ->and($merged['hosts']['staging']['via'])->toBe('ssh');
+});
+
 test('host config maps dir to deploy_path', function () {
     $merged = HostConfig::mergeHostDefaults([], ['dir' => 'public_html']);
 

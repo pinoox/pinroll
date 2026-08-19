@@ -9,7 +9,6 @@ use Pinoox\Pinroll\PinGate\PinGateHttpHandler;
 use Pinoox\Pinroll\Release\ReleaseBuilder;
 use Pinoox\Pinroll\Rollout\RolloutEngine;
 use Pinoox\Pinroll\Support\Config;
-use Pinoox\Pinroll\Support\ConfigFileLoader;
 use Pinoox\Pinroll\Support\NativePathResolver;
 use Pinoox\Pinroll\Support\ProjectPaths;
 use Pinoox\Pinroll\Target\TargetResolver;
@@ -39,13 +38,8 @@ final class Pinroll
     {
         $paths = $paths ?? self::paths();
         $configFile = ProjectPaths::configFile($paths);
-        $overrides = [];
-
-        if ($configFile !== null && is_file($configFile)) {
-            /** @var array<string, mixed> $loaded */
-            $loaded = ConfigFileLoader::load($configFile);
-            $overrides = HostConfig::engineOverrides($loaded);
-        }
+        $loaded = HostConfig::loadMerged($configFile);
+        $overrides = HostConfig::engineOverrides($loaded);
 
         self::configure($overrides, $paths);
     }

@@ -4,6 +4,11 @@ namespace Pinoox\Pinroll\Support;
 
 final class ConfigFileLoader
 {
+    public static function libraryPath(): string
+    {
+        return dirname(__DIR__, 2) . '/config/pinroll.php';
+    }
+
     /**
      * @return array<string, mixed>
      */

@@ -32,7 +32,7 @@ class PinrollGateInitCommand extends Terminal
             ->addOption('zip', 'z', InputOption::VALUE_NONE, 'Also build pinroll/deploy-{host}.zip (manual upload)')
             ->addOption('no-upload', null, InputOption::VALUE_NONE, 'Skip upload; keep files in pinroll/')
             ->addOption('with-vendor', null, InputOption::VALUE_NONE, 'Bundle pinroll vendor into gate/ (slow; only if host lacks pinroll)')
-            ->addOption('rotate', null, InputOption::VALUE_NONE, 'Mint a new token (default: reuse PINROLL_*_TOKEN from .env)')
+            ->addOption('rotate', null, InputOption::VALUE_NONE, 'Mint a new token and invalidate other developers (default: reuse overlay token)')
             ->addOption('via', null, InputOption::VALUE_REQUIRED, 'Transport override: ftp or ssh');
     }
 

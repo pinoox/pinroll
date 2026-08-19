@@ -19,9 +19,11 @@ test('init scaffolds host and env keys from target name', function () {
     $config = file_get_contents($result['config']);
     expect($config)->toContain("'myconnect' => [")
         ->and($config)->toContain("'default_host' => 'myconnect'")
-        ->and($config)->toContain("env('PINROLL_MYCONNECT_HOST'")
-        ->and($config)->toContain("env('PINROLL_MYCONNECT_URL'")
-        ->and($config)->not->toContain("'production' => [");
+        ->and($config)->toContain("'site'")
+        ->and($config)->toContain("'token'")
+        ->and($config)->toContain('vendor/pinoox/pinroll/config/pinroll.php')
+        ->and($config)->not->toContain("'production' => [")
+        ->and($config)->not->toContain("'provision' => [");
 
     $env = file_get_contents($root . '/.env');
     expect($env)->toContain('PINROLL_MYCONNECT_HOST=')
@@ -84,7 +86,7 @@ PHP);
     expect($config)->toContain("'poy' => [")
         ->and($config)->toContain("'poy2' => [")
         ->and($config)->toContain("env('PINROLL_POY_HOST'")
-        ->and($config)->toContain("env('PINROLL_POY2_HOST'")
+        ->and($config)->toContain("'site'")
         ->and($config)->toContain("'default_host' => 'poy'");
 
     $env = file_get_contents($root . '/.env');
@@ -111,6 +113,7 @@ test('init production host writes unscoped PINROLL_* env stubs', function () {
         ->and($env)->toContain('PINROLL_WEB_PATH=')
         ->and($env)->toContain('PINROLL_KEEP=')
         ->and($env)->toContain('PINROLL_URL=')
+        ->and($env)->toContain('PINROLL_SITE=')
         ->and($env)->toContain('PINROLL_TOKEN=')
         ->and($env)->toContain('PINROLL_DB_HOST=')
         ->and($env)->toContain('PINROLL_ADMIN_EMAIL=info@pinoox.com')

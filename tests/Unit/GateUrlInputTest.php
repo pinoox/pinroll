@@ -41,3 +41,16 @@ test('full url is not mixed with hostDir', function () {
         ->toBe('https://pinoox.com/apps.pouyagaranco.ir/pingate.php?route=');
 });
 
+test('site from strips pingate suffix and expand restores it', function () {
+    expect(GateUrl::siteFrom('https://pinoox.com/pingate.php?route='))
+        ->toBe('https://pinoox.com');
+    expect(GateUrl::siteFrom('https://pinoox.com/shop/pingate.php?route='))
+        ->toBe('https://pinoox.com/shop');
+    expect(GateUrl::siteFrom('https://pinoox.com'))
+        ->toBe('https://pinoox.com');
+    expect(GateUrl::expand('https://pinoox.com'))
+        ->toBe('https://pinoox.com/pingate.php?route=');
+    expect(GateUrl::expand('https://pinoox.com/shop/pingate.php?route='))
+        ->toBe('https://pinoox.com/shop/pingate.php?route=');
+});
+
