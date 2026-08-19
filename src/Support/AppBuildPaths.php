@@ -18,10 +18,6 @@ final class AppBuildPaths
 
     public static function pinxExportDir(string $root, string $package): string
     {
-        if (self::isMultiApp($root, $package)) {
-            return self::appDir($root, $package) . '/pinx/export';
-        }
-
         return rtrim(str_replace('\\', '/', $root), '/') . '/pinx/export/' . $package;
     }
 

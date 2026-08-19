@@ -2,7 +2,7 @@
 
 use Pinoox\Pinroll\Support\AppBuildPaths;
 
-test('multi-app pinx export dir is inside apps package folder', function () {
+test('multi-app pinx export dir uses project pinx workspace', function () {
     $root = sys_get_temp_dir() . '/pinroll-app-paths-' . uniqid('', true);
     $package = 'com_demo_app';
     mkdir($root . '/apps/' . $package, 0755, true);
@@ -11,11 +11,11 @@ test('multi-app pinx export dir is inside apps package folder', function () {
     $n = static fn (string $path): string => str_replace('\\', '/', $path);
 
     expect(AppBuildPaths::isMultiApp($root, $package))->toBeTrue()
-        ->and($n(AppBuildPaths::pinxExportDir($root, $package)))->toBe($n($root . '/apps/' . $package . '/pinx/export'));
+        ->and($n(AppBuildPaths::pinxExportDir($root, $package)))->toBe($n($root . '/pinx/export/' . $package));
 
     $output = AppBuildPaths::nextPinxOutput($root, $package);
 
-    expect($n($output))->toStartWith($n($root . '/apps/' . $package . '/pinx/export/' . $package . '_v4_'))
+    expect($n($output))->toStartWith($n($root . '/pinx/export/' . $package . '/' . $package . '_v4_'))
         ->and($output)->toEndWith('.pinx');
 });
 
