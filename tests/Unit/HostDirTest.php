@@ -129,6 +129,7 @@ test('exported pingate.php is a single file with config guard and query routing'
 
     $contents = (string) file_get_contents($export['entry']);
     expect($contents)->toContain('PINROLL_GATE_AS_CONFIG')
+        ->and($contents)->toContain("if (!function_exists('pinroll_pingate_run'))")
         ->and($contents)->toContain('pinroll_pingate_run(__DIR__, $PINROLL_GATE)')
         ->and($contents)->toContain("\$_GET['route']")
         ->and($contents)->not->toContain("dirname(\$configDir)")

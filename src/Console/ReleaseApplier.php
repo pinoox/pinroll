@@ -191,7 +191,7 @@ final class ReleaseApplier
                 return [
                     'ok' => false,
                     'message' => $message,
-                    'repairable' => false,
+                    'repairable' => $repairable,
                     'hints' => $hints,
                 ];
             }
@@ -224,26 +224,16 @@ final class ReleaseApplier
         }
 
         $url = \Pinoox\Pinroll\Console\GateUrl::route($gateUrl, 'status');
-        $context = stream_context_create([
-            'http' => [
-                'method' => 'GET',
-                'header' => implode("\r\n", $headers),
-                'timeout' => 20,
-                'ignore_errors' => true,
-            ],
-        ]);
-
-        $body = @file_get_contents($url, false, $context);
-        if ($body === false) {
+        $transport = \Pinoox\Pinroll\Target\PinGateTransport::request('GET', $url, $headers, '', 20);
+        if (!$transport['reachable']) {
             return ['reachable' => false, 'status' => 0, 'body' => ''];
         }
 
-        $status = 0;
-        if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $matches) === 1) {
-            $status = (int) $matches[1];
-        }
-
-        return ['reachable' => true, 'status' => $status, 'body' => $body];
+        return [
+            'reachable' => true,
+            'status' => $transport['status'],
+            'body' => $transport['body'],
+        ];
     }
 
     /**

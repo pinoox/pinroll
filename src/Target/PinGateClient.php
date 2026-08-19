@@ -45,7 +45,7 @@ final class PinGateClient
      */
     public static function status(string $gateUrlBase, string $token): array
     {
-        return self::request('GET', GateUrl::route($gateUrlBase, 'status'), $token);
+        return self::request('GET', GateUrl::route($gateUrlBase, 'status'), $token, [], 30);
     }
 
     /**
@@ -274,99 +274,7 @@ final class PinGateClient
 
         $content = $method === 'POST' ? json_encode($payload, JSON_THROW_ON_ERROR) : '';
 
-        $context = stream_context_create([
-            'http' => [
-                'method' => $method,
-                'header' => implode("\r\n", $headers),
-                'content' => $content,
-                'timeout' => $timeout > 0 ? $timeout : 180,
-                'ignore_errors' => true,
-            ],
-        ]);
-
-        $body = @file_get_contents($url, false, $context);
-        if ($body !== false) {
-            $status = 0;
-            if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $matches) === 1) {
-                $status = (int) $matches[1];
-            }
-
-            return [
-                'reachable' => true,
-                'status' => $status,
-                'body' => $body,
-                'error' => null,
-            ];
-        }
-
-        $streamError = error_get_last();
-        $streamMessage = is_array($streamError) ? (string) ($streamError['message'] ?? '') : '';
-
-        if (function_exists('curl_init')) {
-            $curl = self::transportViaCurl($method, $url, $headers, $content, $timeout);
-            if ($curl['reachable']) {
-                return $curl;
-            }
-
-            if ($streamMessage === '') {
-                $streamMessage = (string) ($curl['error'] ?? '');
-            }
-        }
-
-        return [
-            'reachable' => false,
-            'status' => 0,
-            'body' => '',
-            'error' => $streamMessage !== '' ? $streamMessage : 'Connection failed',
-        ];
-    }
-
-    /**
-     * @param list<string> $headers
-     * @return array{reachable: bool, status: int, body: string, error: ?string}
-     */
-    private static function transportViaCurl(string $method, string $url, array $headers, string $content, int $timeout): array
-    {
-        $ch = curl_init($url);
-        if ($ch === false) {
-            return [
-                'reachable' => false,
-                'status' => 0,
-                'body' => '',
-                'error' => 'Unable to initialize cURL.',
-            ];
-        }
-
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CUSTOMREQUEST => $method,
-            CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_POSTFIELDS => $method === 'POST' ? $content : null,
-            CURLOPT_TIMEOUT => $timeout > 0 ? $timeout : 180,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_SSL_VERIFYHOST => 2,
-        ]);
-
-        $body = curl_exec($ch);
-        $curlError = curl_error($ch);
-        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($body === false) {
-            return [
-                'reachable' => false,
-                'status' => 0,
-                'body' => '',
-                'error' => $curlError !== '' ? $curlError : 'cURL request failed',
-            ];
-        }
-
-        return [
-            'reachable' => true,
-            'status' => $status,
-            'body' => (string) $body,
-            'error' => null,
-        ];
+        return PinGateTransport::request($method, $url, $headers, $content, $timeout);
     }
 
     /**
@@ -381,8 +289,11 @@ final class PinGateClient
         ];
 
         $lower = strtolower($error);
-        if (str_contains($lower, 'ssl') || str_contains($lower, 'certificate')) {
-            $lines[] = 'Hint: TLS/SSL issue reaching the host — verify the domain certificate or try from another network.';
+        if (str_contains($lower, 'ssl') || str_contains($lower, 'certificate') || str_contains($lower, 'operation failed')) {
+            $ca = PinGateTransport::resolveCaFile();
+            $lines[] = $ca === null
+                ? 'Hint: PHP TLS CA bundle is missing or invalid (openssl.cafile / curl.cainfo). Set them to a real cacert.pem.'
+                : 'Hint: Retry after Pinroll uses CA file: ' . $ca;
         } elseif (str_contains($lower, 'timed out') || str_contains($lower, 'timeout')) {
             $lines[] = 'Hint: The host may still be installing — retry: php pinoox pinroll:install {host} {deploy_id}';
         } elseif (str_contains($lower, 'could not resolve host') || str_contains($lower, 'getaddrinfo')) {

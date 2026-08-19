@@ -34,8 +34,11 @@ final class FtpUploader
             throw new PinrollException('FTP login failed. Check PINROLL_*_USER / PASSWORD.');
         }
 
-        ftp_pasv($connection, true);
-        PushProgress::arrow('FTP connected');
+        if (!@ftp_pasv($connection, true)) {
+            PushProgress::detail('FTP PASV failed — continuing in active mode');
+        } else {
+            PushProgress::arrow('FTP connected');
+        }
 
         return $connection;
     }
@@ -50,6 +53,54 @@ final class FtpUploader
 
         if (!@ftp_put($connection, $remoteFile, $localFile, FTP_BINARY)) {
             throw new PinrollException('FTP upload failed: ' . $remoteFile);
+        }
+    }
+
+    public function uploadFileCurl(string $host, string $user, string $password, string $localFile, string $remoteFile): void
+    {
+        if (!function_exists('curl_init')) {
+            throw new PinrollException('FTP upload failed and cURL is not available for fallback.');
+        }
+
+        if (!is_file($localFile)) {
+            throw new PinrollException('Missing local file for FTP upload: ' . $localFile);
+        }
+
+        $remoteFile = ltrim(str_replace('\\', '/', $remoteFile), '/');
+        $encodedPath = implode('/', array_map('rawurlencode', explode('/', $remoteFile)));
+        $url = 'ftp://' . $host . '/' . $encodedPath;
+
+        $stream = fopen($localFile, 'rb');
+        if ($stream === false) {
+            throw new PinrollException('Unable to read local file for FTP upload: ' . $localFile);
+        }
+
+        $ch = curl_init($url);
+        if ($ch === false) {
+            fclose($stream);
+            throw new PinrollException('Unable to initialize cURL for FTP upload.');
+        }
+
+        $createDir = defined('CURLFTP_CREATE_DIR_RETRY') ? CURLFTP_CREATE_DIR_RETRY : 2;
+        curl_setopt_array($ch, [
+            CURLOPT_UPLOAD => true,
+            CURLOPT_INFILE => $stream,
+            CURLOPT_INFILESIZE => (int) filesize($localFile),
+            CURLOPT_USERNAME => $user,
+            CURLOPT_PASSWORD => $password,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_CONNECTTIMEOUT => 20,
+            CURLOPT_FTP_CREATE_MISSING_DIRS => $createDir,
+            CURLOPT_FTP_USE_EPSV => false,
+        ]);
+
+        $ok = curl_exec($ch);
+        $error = curl_error($ch);
+        curl_close($ch);
+        fclose($stream);
+
+        if ($ok === false) {
+            throw new PinrollException('FTP (cURL) upload failed: ' . $error);
         }
     }
 

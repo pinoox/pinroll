@@ -95,7 +95,9 @@ if (defined('PINROLL_GATE_AS_CONFIG')) {
     return \$PINROLL_GATE;
 }
 
+if (!function_exists('pinroll_pingate_run')) {
 {$bootstrap}
+}
 
 pinroll_pingate_run(__DIR__, \$PINROLL_GATE);
 

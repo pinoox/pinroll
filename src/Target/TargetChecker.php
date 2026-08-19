@@ -345,39 +345,23 @@ final class TargetChecker
             $headers[] = 'Authorization: Bearer ' . $token;
         }
 
-        $context = stream_context_create([
-            'http' => [
-                'method' => 'GET',
-                'header' => implode("\r\n", $headers),
-                'timeout' => 15,
-                'ignore_errors' => true,
-            ],
-        ]);
-
-        $body = @file_get_contents($url, false, $context);
-        if ($body === false) {
-            $error = error_get_last();
-
+        $transport = PinGateTransport::request('GET', $url, $headers, '', 15);
+        if (!$transport['reachable']) {
             return [
                 'reachable' => false,
                 'status' => 0,
-                'error' => $error['message'] ?? 'Connection failed',
+                'error' => $transport['error'] ?? 'Connection failed',
                 'body' => '',
                 'body_excerpt' => null,
             ];
         }
 
-        $status = 0;
-        if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) {
-            $status = (int) $m[1];
-        }
-
         return [
             'reachable' => true,
-            'status' => $status,
+            'status' => $transport['status'],
             'error' => null,
-            'body' => $body,
-            'body_excerpt' => substr(trim($body), 0, 120),
+            'body' => $transport['body'],
+            'body_excerpt' => substr(trim($transport['body']), 0, 120),
         ];
     }
 

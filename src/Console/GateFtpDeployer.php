@@ -32,24 +32,31 @@ final class GateFtpDeployer
         }
 
         $uploader = new FtpUploader();
-        $connection = $uploader->connect($host, $user, $password);
+        $deployRoot = HostDir::deployRoot(HostDir::fromHost($resolvedTarget));
+        $prefix = $deployRoot === '.' ? '' : rtrim($deployRoot, '/') . '/';
+        $remoteEntry = $prefix . HostDir::GATE_ENTRY;
+
+        PushProgress::arrow('FTP ' . $remoteEntry);
 
         try {
-            $deployRoot = HostDir::deployRoot(HostDir::fromHost($resolvedTarget));
-            $prefix = $deployRoot === '.' ? '' : rtrim($deployRoot, '/') . '/';
-
-            $remoteEntry = $prefix . HostDir::GATE_ENTRY;
-            PushProgress::arrow('FTP ' . $remoteEntry);
-            $uploader->uploadFile($connection, $localEntry, $remoteEntry);
-            $uploader->removeRemoteTree($connection, $prefix . HostDir::GATE_DIR);
-
-            return [
-                'remote_root' => $deployRoot === '.' ? HostDir::GATE_ENTRY : $deployRoot,
-                'files' => 1,
-            ];
-        } finally {
-            ftp_close($connection);
+            $uploader->uploadFileCurl($host, $user, $password, $localEntry, $remoteEntry);
+        } catch (\Throwable $curlError) {
+            PushProgress::detail('cURL FTP failed — trying PHP FTP: ' . $curlError->getMessage());
+            $connection = $uploader->connect($host, $user, $password);
+            try {
+                $uploader->uploadFile($connection, $localEntry, $remoteEntry);
+                $uploader->removeRemoteTree($connection, $prefix . HostDir::GATE_DIR);
+            } finally {
+                if (is_resource($connection) || (is_object($connection) && $connection instanceof \FTP\Connection)) {
+                    @ftp_close($connection);
+                }
+            }
         }
+
+        return [
+            'remote_root' => $deployRoot === '.' ? HostDir::GATE_ENTRY : $deployRoot,
+            'files' => 1,
+        ];
     }
 
     /**
