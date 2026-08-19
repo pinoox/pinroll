@@ -9,6 +9,7 @@ use Pinoox\Pinroll\Support\PushProgress;
 use Pinoox\Pinroll\Host\HostGate;
 use Pinoox\Pinroll\Host\RetentionPolicy;
 use Pinoox\Pinroll\Target\PinGateClient;
+use Pinoox\Pinroll\Target\PinGateProbe;
 
 final class ReleaseApplier
 {
@@ -103,6 +104,8 @@ final class ReleaseApplier
 
         $retention = RetentionPolicy::settings($host);
         $label = $deployId !== '' ? $deployId : 'latest';
+        $hostName = (string) ($resolvedTarget['name'] ?? 'production');
+        $this->ensurePinGateReady($gateUrl, $token, $hostName, $resolvedTarget, $rawTarget);
         PushProgress::arrow('PinGate install: ' . $label);
         $result = PinGateClient::install($gateUrl, $token, $deployId, [
             'keep' => $retention['keep'],
@@ -123,6 +126,124 @@ final class ReleaseApplier
         ]);
 
         self::reportCleanup($session, $cleanup, $retention);
+    }
+
+    /**
+     * @param array<string, mixed> $resolvedTarget
+     * @param array<string, mixed> $rawTarget
+     */
+    private function ensurePinGateReady(
+        string $gateUrl,
+        string $token,
+        string $hostName,
+        array $resolvedTarget,
+        array $rawTarget,
+    ): void {
+        $probe = $this->probePinGate($gateUrl, $token, $rawTarget, $hostName);
+        if ($probe['ok']) {
+            return;
+        }
+
+        if (($probe['repairable'] ?? false) && GateDeployer::canUpload($resolvedTarget)) {
+            PushProgress::arrow('PinGate on host is broken — re-uploading pingate.php…');
+            (new DeployRunner())->initGate($hostName, false, null, $gateUrl, false, true);
+            $probe = $this->probePinGate($gateUrl, $token, $rawTarget, $hostName);
+        }
+
+        if ($probe['ok']) {
+            return;
+        }
+
+        $message = (string) ($probe['message'] ?? 'PinGate is not ready.');
+        $hints = $probe['hints'] ?? [];
+        if ($hints !== []) {
+            $message .= "\n" . implode("\n", $hints);
+        }
+
+        throw new PinrollException($message);
+    }
+
+    /**
+     * @param array<string, mixed> $rawTarget
+     * @return array{ok: bool, message?: string, repairable?: bool, hints?: list<string>}
+     */
+    private function probePinGate(string $gateUrl, string $token, array $rawTarget, string $hostName): array
+    {
+        try {
+            PinGateClient::status($gateUrl, $token);
+
+            return ['ok' => true];
+        } catch (PinrollException $e) {
+            $message = $e->getMessage();
+            $repairable = str_contains($message, 'Cannot redeclare pinroll_pingate_run')
+                || str_contains($message, 'Not PinGate JSON')
+                || str_contains($message, 'Fatal error');
+
+            $hints = [];
+            if ($repairable) {
+                $hints[] = 'Manual fix: php pinoox pinroll:gate ' . $hostName;
+            }
+
+            $hostDir = HostDir::fromTarget($rawTarget);
+            $webDir = HostDir::webPathFromHost($rawTarget);
+            $http = $this->httpGetStatus($gateUrl, $token);
+            if (!$http['reachable']) {
+                return [
+                    'ok' => false,
+                    'message' => $message,
+                    'repairable' => false,
+                    'hints' => $hints,
+                ];
+            }
+
+            $validated = PinGateProbe::validateStatusResponse(
+                (int) $http['status'],
+                (string) $http['body'],
+                $hostDir,
+                $webDir,
+                $hostName,
+            );
+
+            return [
+                'ok' => false,
+                'message' => (string) ($validated['message'] ?? $message),
+                'repairable' => $repairable || !($validated['deployed'] ?? false),
+                'hints' => $validated['hints'] ?? $hints,
+            ];
+        }
+    }
+
+    /**
+     * @return array{reachable: bool, status: int, body: string}
+     */
+    private function httpGetStatus(string $gateUrl, string $token): array
+    {
+        $headers = ['Accept: application/json'];
+        if ($token !== '') {
+            $headers[] = 'Authorization: Bearer ' . $token;
+        }
+
+        $url = \Pinoox\Pinroll\Console\GateUrl::route($gateUrl, 'status');
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'header' => implode("\r\n", $headers),
+                'timeout' => 20,
+                'ignore_errors' => true,
+            ],
+        ]);
+
+        $body = @file_get_contents($url, false, $context);
+        if ($body === false) {
+            return ['reachable' => false, 'status' => 0, 'body' => ''];
+        }
+
+        $status = 0;
+        if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $matches) === 1) {
+            $status = (int) $matches[1];
+        }
+
+        return ['reachable' => true, 'status' => $status, 'body' => $body];
     }
 
     /**

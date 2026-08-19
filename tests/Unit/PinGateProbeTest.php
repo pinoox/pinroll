@@ -53,6 +53,16 @@ test('pingate probe detects invalid gate url route', function () {
     expect($result['message'])->toContain('Wrong gate_url');
 });
 
+test('pingate probe surfaces redeclare fatal from broken pingate.php', function () {
+    $html = '<br /><b>Fatal error</b>:  Cannot redeclare pinroll_pingate_run() (previously declared in /home/pinoox/public_html/pingate.php:19) in <b>/home/pinoox/public_html/pingate.php</b> on line <b>19</b><br />';
+
+    $result = PinGateProbe::validateStatusResponse(200, $html, '');
+
+    expect($result['ok'])->toBeFalse();
+    expect($result['message'])->toContain('Cannot redeclare pinroll_pingate_run');
+    expect($result['message'])->toContain('pinroll:gate');
+});
+
 test('pingate probe surfaces real json error for 503', function () {
     $body = json_encode([
         'success' => false,

@@ -2,6 +2,7 @@
 
 namespace Pinoox\Pinroll\Target;
 
+use Pinoox\Pinroll\Console\GateUrl;
 use Pinoox\Pinroll\Pinroll;
 use Pinoox\Pinroll\Support\Config;
 use Pinoox\Pinroll\Support\HostDir;
@@ -119,7 +120,7 @@ final class TargetChecker
             return $checks;
         }
 
-        $statusUrl = $gateUrl . 'status';
+        $statusUrl = GateUrl::route($gateUrl, 'status');
         $http = $this->httpGet($statusUrl, $token);
 
         $checks[] = $this->checkField(
@@ -284,7 +285,7 @@ final class TargetChecker
         $checks[] = $this->checkField('login', $loggedIn, $loggedIn ? 'FTP login successful' : 'FTP login failed');
 
         if ($gateUrl !== '') {
-            $http = $this->httpGet($gateUrl . 'status', (string) ($target['token'] ?? ''));
+            $http = $this->httpGet(GateUrl::route($gateUrl, 'status'), (string) ($target['token'] ?? ''));
             $probe = PinGateProbe::validateStatusResponse(
                 (int) $http['status'],
                 (string) ($http['body'] ?? ''),

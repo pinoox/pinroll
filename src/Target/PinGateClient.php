@@ -2,6 +2,7 @@
 
 namespace Pinoox\Pinroll\Target;
 
+use Pinoox\Pinroll\Console\GateUrl;
 use Pinoox\Pinroll\Exception\PinrollException;
 
 final class PinGateClient
@@ -11,12 +12,12 @@ final class PinGateClient
      */
     public static function install(string $gateUrlBase, string $token, string $deployId, array $options = []): array
     {
-        $url = rtrim($gateUrlBase, '/') . '/install';
+        $url = GateUrl::route($gateUrlBase, 'install');
         $payload = array_merge(['deploy_id' => $deployId], $options);
         $response = self::request('POST', $url, $token, $payload);
 
         if (!($response['success'] ?? false)) {
-            $response = self::request('POST', rtrim($gateUrlBase, '/') . '/apply', $token, $payload);
+            $response = self::request('POST', GateUrl::route($gateUrlBase, 'apply'), $token, $payload);
         }
 
         if (!($response['success'] ?? false)) {
@@ -44,9 +45,7 @@ final class PinGateClient
      */
     public static function status(string $gateUrlBase, string $token): array
     {
-        $url = rtrim($gateUrlBase, '/') . '/status';
-
-        return self::request('GET', $url, $token);
+        return self::request('GET', GateUrl::route($gateUrlBase, 'status'), $token);
     }
 
     /**
@@ -56,9 +55,8 @@ final class PinGateClient
      */
     public static function rollback(string $gateUrlBase, string $token, string $deployId = ''): array
     {
-        $url = rtrim($gateUrlBase, '/') . '/rollback';
         $payload = $deployId !== '' ? ['deploy_id' => $deployId] : [];
-        $response = self::request('POST', $url, $token, $payload);
+        $response = self::request('POST', GateUrl::route($gateUrlBase, 'rollback'), $token, $payload);
 
         if (!($response['success'] ?? false)) {
             throw new PinrollException((string) ($response['error'] ?? 'PinGate rollback failed.'));
@@ -77,8 +75,7 @@ final class PinGateClient
      */
     public static function history(string $gateUrlBase, string $token): array
     {
-        $url = rtrim($gateUrlBase, '/') . '/history';
-        $response = self::request('GET', $url, $token);
+        $response = self::request('GET', GateUrl::route($gateUrlBase, 'history'), $token);
         $data = $response['data'] ?? $response;
 
         return is_array($data) ? $data : [];
@@ -89,8 +86,7 @@ final class PinGateClient
      */
     public static function incoming(string $gateUrlBase, string $token): array
     {
-        $url = rtrim($gateUrlBase, '/') . '/incoming';
-        $response = self::request('GET', $url, $token);
+        $response = self::request('GET', GateUrl::route($gateUrlBase, 'incoming'), $token);
 
         if (!($response['success'] ?? false) && !isset($response['releases']) && !isset($response['data'])) {
             throw new PinrollException((string) ($response['error'] ?? 'PinGate incoming list failed.'));
@@ -112,8 +108,7 @@ final class PinGateClient
      */
     public static function extractVendor(string $gateUrlBase, string $token, array $options = []): array
     {
-        $url = rtrim($gateUrlBase, '/') . '/vendor';
-        $response = self::request('POST', $url, $token, $options, 180);
+        $response = self::request('POST', GateUrl::route($gateUrlBase, 'vendor'), $token, $options, 180);
 
         if (!($response['success'] ?? false)) {
             throw new PinrollException((string) ($response['error'] ?? 'PinGate vendor extract failed.'));
@@ -135,8 +130,7 @@ final class PinGateClient
      */
     public static function bootstrap(string $gateUrlBase, string $token, array $options = []): array
     {
-        $url = rtrim($gateUrlBase, '/') . '/bootstrap';
-        $response = self::request('POST', $url, $token, $options, 600);
+        $response = self::request('POST', GateUrl::route($gateUrlBase, 'bootstrap'), $token, $options, 600);
 
         if (!($response['success'] ?? false)) {
             throw new PinrollException((string) ($response['error'] ?? 'PinGate platform bootstrap failed.'));
@@ -156,8 +150,7 @@ final class PinGateClient
      */
     public static function setup(string $gateUrlBase, string $token, array $payload): array
     {
-        $url = rtrim($gateUrlBase, '/') . '/setup';
-        $response = self::request('POST', $url, $token, $payload, 600);
+        $response = self::request('POST', GateUrl::route($gateUrlBase, 'setup'), $token, $payload, 600);
 
         if (!($response['success'] ?? false)) {
             throw new PinrollException((string) ($response['error'] ?? 'PinGate setup failed.'));
@@ -177,8 +170,7 @@ final class PinGateClient
      */
     public static function checkDb(string $gateUrlBase, string $token, array $db): array
     {
-        $url = rtrim($gateUrlBase, '/') . '/check-db';
-        $response = self::request('POST', $url, $token, ['db' => $db], 60);
+        $response = self::request('POST', GateUrl::route($gateUrlBase, 'check-db'), $token, ['db' => $db], 60);
 
         if (!($response['success'] ?? false)) {
             throw new PinrollException((string) ($response['error'] ?? 'PinGate database check failed.'));
@@ -198,8 +190,7 @@ final class PinGateClient
      */
     public static function cleanup(string $gateUrlBase, string $token, array $options = []): array
     {
-        $url = rtrim($gateUrlBase, '/') . '/cleanup';
-        $response = self::request('POST', $url, $token, $options);
+        $response = self::request('POST', GateUrl::route($gateUrlBase, 'cleanup'), $token, $options);
 
         if (!($response['success'] ?? false)) {
             throw new PinrollException((string) ($response['error'] ?? 'PinGate cleanup failed.'));
@@ -219,34 +210,26 @@ final class PinGateClient
      */
     private static function request(string $method, string $url, string $token, array $payload = [], int $timeout = 180): array
     {
-        $headers = [
-            'Accept: application/json',
-            'Content-Type: application/json',
-        ];
+        $transport = self::transport($method, $url, $token, $payload, $timeout);
 
-        if ($token !== '') {
-            $headers[] = 'Authorization: Bearer ' . $token;
+        if (!$transport['reachable']) {
+            PinGateRequestLog::write($method, $url, [
+                'ok' => false,
+                'transport_error' => $transport['error'],
+                'status' => 0,
+            ]);
+
+            throw new PinrollException(self::transportErrorMessage($url, $transport));
         }
 
-        $context = stream_context_create([
-            'http' => [
-                'method' => $method,
-                'header' => implode("\r\n", $headers),
-                'content' => $method === 'POST' ? json_encode($payload, JSON_THROW_ON_ERROR) : '',
-                'timeout' => $timeout > 0 ? $timeout : 180,
-                'ignore_errors' => true,
-            ],
+        $body = $transport['body'];
+        $status = $transport['status'];
+
+        PinGateRequestLog::write($method, $url, [
+            'ok' => true,
+            'status' => $status,
+            'body_excerpt' => substr(trim($body), 0, 240),
         ]);
-
-        $body = @file_get_contents($url, false, $context);
-        if ($body === false) {
-            throw new PinrollException('PinGate request failed: ' . $url);
-        }
-
-        $status = 0;
-        if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $matches) === 1) {
-            $status = (int) $matches[1];
-        }
 
         $trimmed = trim($body);
         if ($trimmed === '' || $trimmed[0] !== '{') {
@@ -272,5 +255,145 @@ final class PinGateClient
         }
 
         return $decoded;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array{reachable: bool, status: int, body: string, error: ?string}
+     */
+    private static function transport(string $method, string $url, string $token, array $payload, int $timeout): array
+    {
+        $headers = [
+            'Accept: application/json',
+            'Content-Type: application/json',
+        ];
+
+        if ($token !== '') {
+            $headers[] = 'Authorization: Bearer ' . $token;
+        }
+
+        $content = $method === 'POST' ? json_encode($payload, JSON_THROW_ON_ERROR) : '';
+
+        $context = stream_context_create([
+            'http' => [
+                'method' => $method,
+                'header' => implode("\r\n", $headers),
+                'content' => $content,
+                'timeout' => $timeout > 0 ? $timeout : 180,
+                'ignore_errors' => true,
+            ],
+        ]);
+
+        $body = @file_get_contents($url, false, $context);
+        if ($body !== false) {
+            $status = 0;
+            if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $matches) === 1) {
+                $status = (int) $matches[1];
+            }
+
+            return [
+                'reachable' => true,
+                'status' => $status,
+                'body' => $body,
+                'error' => null,
+            ];
+        }
+
+        $streamError = error_get_last();
+        $streamMessage = is_array($streamError) ? (string) ($streamError['message'] ?? '') : '';
+
+        if (function_exists('curl_init')) {
+            $curl = self::transportViaCurl($method, $url, $headers, $content, $timeout);
+            if ($curl['reachable']) {
+                return $curl;
+            }
+
+            if ($streamMessage === '') {
+                $streamMessage = (string) ($curl['error'] ?? '');
+            }
+        }
+
+        return [
+            'reachable' => false,
+            'status' => 0,
+            'body' => '',
+            'error' => $streamMessage !== '' ? $streamMessage : 'Connection failed',
+        ];
+    }
+
+    /**
+     * @param list<string> $headers
+     * @return array{reachable: bool, status: int, body: string, error: ?string}
+     */
+    private static function transportViaCurl(string $method, string $url, array $headers, string $content, int $timeout): array
+    {
+        $ch = curl_init($url);
+        if ($ch === false) {
+            return [
+                'reachable' => false,
+                'status' => 0,
+                'body' => '',
+                'error' => 'Unable to initialize cURL.',
+            ];
+        }
+
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CUSTOMREQUEST => $method,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_POSTFIELDS => $method === 'POST' ? $content : null,
+            CURLOPT_TIMEOUT => $timeout > 0 ? $timeout : 180,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+        ]);
+
+        $body = curl_exec($ch);
+        $curlError = curl_error($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($body === false) {
+            return [
+                'reachable' => false,
+                'status' => 0,
+                'body' => '',
+                'error' => $curlError !== '' ? $curlError : 'cURL request failed',
+            ];
+        }
+
+        return [
+            'reachable' => true,
+            'status' => $status,
+            'body' => (string) $body,
+            'error' => null,
+        ];
+    }
+
+    /**
+     * @param array{reachable: bool, status: int, body: string, error: ?string} $transport
+     */
+    private static function transportErrorMessage(string $url, array $transport): string
+    {
+        $error = trim((string) ($transport['error'] ?? 'Connection failed'));
+        $lines = [
+            'PinGate request failed: ' . $url,
+            'Transport: ' . $error,
+        ];
+
+        $lower = strtolower($error);
+        if (str_contains($lower, 'ssl') || str_contains($lower, 'certificate')) {
+            $lines[] = 'Hint: TLS/SSL issue reaching the host — verify the domain certificate or try from another network.';
+        } elseif (str_contains($lower, 'timed out') || str_contains($lower, 'timeout')) {
+            $lines[] = 'Hint: The host may still be installing — retry: php pinoox pinroll:install {host} {deploy_id}';
+        } elseif (str_contains($lower, 'could not resolve host') || str_contains($lower, 'getaddrinfo')) {
+            $lines[] = 'Hint: DNS lookup failed — check gate.site / gate URL in .pinoox/pinroll.config.php.';
+        }
+
+        $logPath = PinGateRequestLog::path();
+        if ($logPath !== null) {
+            $lines[] = 'Log: ' . $logPath;
+        }
+
+        return implode("\n", $lines);
     }
 }

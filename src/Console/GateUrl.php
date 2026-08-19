@@ -57,6 +57,25 @@ final class GateUrl
         return self::normalizeInput($input, $hostDir);
     }
 
+    /**
+     * Append a PinGate route to a base URL (with or without ?route= suffix).
+     */
+    public static function route(string $gateUrlBase, string $route): string
+    {
+        $base = rtrim($gateUrlBase, '/');
+        $route = ltrim(trim($route), '/');
+
+        if ($route === '') {
+            return $base;
+        }
+
+        if (str_contains($base, '?route=')) {
+            return $base . $route;
+        }
+
+        return $base . '/' . $route;
+    }
+
     public static function normalizeInput(string $input, ?string $hostDir = null): string
     {
         $input = trim($input);

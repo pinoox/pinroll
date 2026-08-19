@@ -114,9 +114,13 @@ final class PinGateProbe
         if ($trimmed === '' || $trimmed[0] !== '{') {
             $phpError = self::extractPhpError($body);
             if ($phpError !== null) {
-                $hintPack = str_contains($phpError, 'Failed to open stream') || str_contains($phpError, 'phpunit')
-                    ? ' Re-run: php pinoox pinroll:vendor — upload a complete vendor.zip (do not strip phpunit).'
-                    : '';
+                $hintPack = match (true) {
+                    str_contains($phpError, 'Cannot redeclare pinroll_pingate_run') =>
+                        ' Re-upload a clean pingate.php: php pinoox pinroll:gate {host}',
+                    str_contains($phpError, 'Failed to open stream') || str_contains($phpError, 'phpunit') =>
+                        ' Re-run: php pinoox pinroll:vendor — upload a complete vendor.zip (do not strip phpunit).',
+                    default => '',
+                };
 
                 return [
                     'ok' => false,

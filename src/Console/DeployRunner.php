@@ -143,7 +143,7 @@ final class DeployRunner
             $lastIndex = array_key_last($builds);
 
             foreach ($builds as $index => $result) {
-                $deployId = $result['manifest']->deployId();
+                $deployId = IncomingRelease::idFromArchive((string) $result['archive']);
                 PushSteps::start('Install ' . $deployId . ' via PinGate');
                 // Defer retention cleanup until the last install so sibling staged
                 // releases from this deploy are not pruned mid-batch (keep=N).
