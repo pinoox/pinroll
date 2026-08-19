@@ -30,7 +30,7 @@ test('config writer renders env backed fields via template', function () {
         ->toContain("'gate' => [")
         ->toContain("'via' => 'ftp'")
         ->toContain("env('PINROLL_DB_HOST', 'localhost')")
-        ->toContain("env('PINROLL_ADMIN_EMAIL', '')")
+        ->toContain("env('PINROLL_ADMIN_EMAIL', 'info@pinoox.com')")
         ->toContain("'provision' => [")
         ->toContain("'build' => [");
 });

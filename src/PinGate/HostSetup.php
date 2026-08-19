@@ -51,11 +51,25 @@ final class HostSetup
             throw new PinrollException(implode("\n", $errors), 422);
         }
 
-        \App\com_pinoox_installer\Component\SetupService::make()->run(
-            $settings['db'],
-            $settings['user'],
-            $settings['lang'],
-        );
+        $runSetup = static function () use ($settings): void {
+            \App\com_pinoox_installer\Component\SetupService::make()->run(
+                $settings['db'],
+                $settings['user'],
+                $settings['lang'],
+            );
+        };
+
+        if (class_exists(\Pinoox\Portal\App\App::class)
+            && \Pinoox\Portal\App\App::exists('com_pinoox_installer')
+        ) {
+            try {
+                \Pinoox\Portal\App\App::meeting('com_pinoox_installer', $runSetup);
+            } catch (\Throwable) {
+                $runSetup();
+            }
+        } else {
+            $runSetup();
+        }
 
         $htaccess = false;
         try {
@@ -64,10 +78,14 @@ final class HostSetup
         } catch (\Throwable) {
         }
 
+        $finish = HostPostInstall::apply($root);
+
         return [
             'installed' => true,
             'lang' => $settings['lang'],
             'htaccess' => $htaccess,
+            'routes' => $finish['routes'],
+            'installer_disabled' => $finish['installer_disabled'],
         ];
     }
 

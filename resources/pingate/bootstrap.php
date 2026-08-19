@@ -1207,8 +1207,19 @@ function pinroll_pincore_setup(string $root, array $input): array
         $db = is_array($input['db'] ?? null) ? $input['db'] : [];
         $user = is_array($input['user'] ?? null) ? $input['user'] : [];
         $lang = isset($input['lang']) ? (string) $input['lang'] : null;
+        foreach (pinroll_default_admin_user() as $key => $value) {
+            if (trim((string) ($user[$key] ?? '')) === '') {
+                $user[$key] = $value;
+            }
+        }
 
-        return \Pinoox\Pinroll\PinGate\HostSetup::run($root, $db, $user, $lang, !empty($input['force']));
+        $result = \Pinoox\Pinroll\PinGate\HostSetup::run($root, $db, $user, $lang, !empty($input['force']));
+        $finish = pinroll_finish_install($root);
+
+        return array_merge($result, [
+            'routes' => $finish['routes'],
+            'installer_disabled' => $finish['installer_disabled'],
+        ]);
     }
 
     if (!class_exists(\App\com_pinoox_installer\Component\SetupService::class)) {
@@ -1222,6 +1233,11 @@ function pinroll_pincore_setup(string $root, array $input): array
     $db = is_array($input['db'] ?? null) ? $input['db'] : [];
     $user = is_array($input['user'] ?? null) ? $input['user'] : [];
     $lang = isset($input['lang']) ? (string) $input['lang'] : 'en';
+    foreach (pinroll_default_admin_user() as $key => $value) {
+        if (trim((string) ($user[$key] ?? '')) === '') {
+            $user[$key] = $value;
+        }
+    }
     $errors = pinroll_validate_provision_payload($db, $user, $lang);
     if ($errors !== []) {
         throw new RuntimeException(implode("\n", $errors));
@@ -1236,10 +1252,14 @@ function pinroll_pincore_setup(string $root, array $input): array
     } catch (Throwable) {
     }
 
+    $finish = pinroll_finish_install($root);
+
     return [
         'installed' => true,
         'lang' => $lang,
         'htaccess' => $htaccess,
+        'routes' => $finish['routes'],
+        'installer_disabled' => $finish['installer_disabled'],
     ];
 }
 
@@ -1348,6 +1368,80 @@ function pinroll_installer_is_disabled(string $root): bool
     }
 
     return false;
+}
+
+/**
+ * @return array<string, string>
+ */
+function pinroll_default_admin_user(): array
+{
+    return [
+        'fname' => 'support',
+        'lname' => 'pinoox',
+        'email' => 'info@pinoox.com',
+        'username' => 'admin',
+        'password' => '123456',
+    ];
+}
+
+/**
+ * Same finish as the web installer: app-router from installer config + disable installer.
+ *
+ * @return array{routes: array<string, string>, installer_disabled: bool}
+ */
+function pinroll_finish_install(string $root): array
+{
+    if (class_exists(\Pinoox\Pinroll\PinGate\HostPostInstall::class)) {
+        return \Pinoox\Pinroll\PinGate\HostPostInstall::apply($root);
+    }
+
+    $root = rtrim(str_replace('\\', '/', $root), '/');
+    $routesFile = $root . '/apps/com_pinoox_installer/config/app.config.php';
+    $routes = is_file($routesFile) ? include $routesFile : [];
+    if (!is_array($routes) || $routes === []) {
+        $routes = [
+            '/' => 'com_pinoox_welcome',
+            '/manager' => 'com_pinoox_manager',
+        ];
+    }
+
+    $routerWritten = false;
+    try {
+        if (class_exists(\Pinoox\Portal\App\AppRouter::class)) {
+            \Pinoox\Portal\App\AppRouter::setData($routes);
+            $routerWritten = true;
+        }
+    } catch (Throwable) {
+    }
+    if (!$routerWritten) {
+        $php = "<?php\n\nreturn " . var_export($routes, true) . ";\n";
+        foreach ([
+            $root . '/platform/app-router.config.php',
+            $root . '/pinker/platform/app-router.config.php',
+        ] as $file) {
+            $dir = dirname($file);
+            if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+                continue;
+            }
+            @file_put_contents($file, $php);
+        }
+    }
+
+    $disabled = false;
+    try {
+        if (class_exists(\Pinoox\Portal\App\AppEngine::class)
+            && \Pinoox\Portal\App\AppEngine::exists('com_pinoox_installer')
+        ) {
+            \Pinoox\Portal\App\AppEngine::config('com_pinoox_installer')->set('enable', false)->save();
+            $disabled = true;
+        }
+    } catch (Throwable) {
+    }
+
+    return [
+        'routes' => $routes,
+        'installer_disabled' => $disabled,
+    ];
 }
 
 /**

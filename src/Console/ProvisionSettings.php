@@ -103,11 +103,11 @@ final class ProvisionSettings
     public static function defaultUser(): array
     {
         return [
-            'fname' => '',
-            'lname' => '',
-            'email' => '',
-            'username' => '',
-            'password' => '',
+            'fname' => 'support',
+            'lname' => 'pinoox',
+            'email' => 'info@pinoox.com',
+            'username' => 'admin',
+            'password' => '123456',
         ];
     }
 
@@ -126,7 +126,11 @@ final class ProvisionSettings
             if (!is_string($key) || $item === null) {
                 continue;
             }
-            $out[$key] = is_scalar($item) ? (string) $item : '';
+            $string = is_scalar($item) ? (string) $item : '';
+            if (trim($string) === '') {
+                continue;
+            }
+            $out[$key] = $string;
         }
 
         return $out;

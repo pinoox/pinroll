@@ -1,6 +1,6 @@
 # Pinroll — Release Rollout Engine
 
-**Pinroll** (`pinoox/pinroll`) **1.4.0** — atomic release rollout, rollback, PinGate delivery, and blank-host provision for Pinoox.
+**Pinroll** (`pinoox/pinroll`) **1.4.1** — atomic release rollout, rollback, PinGate delivery, and blank-host provision for Pinoox.
 
 | Concept | Meaning |
 |---------|---------|
@@ -96,7 +96,7 @@ php pinoox pinroll:pull --server=https://releases.example.com
 ```
 
 - `pinroll:init` — scaffold `.pinoox/pinroll.config.php` + `.env` key stubs (legacy `pinroll/pinroll.config.php` still loads)
-- `pinroll:provision` — blank-host install: PinGate + `platform.zip` extract + installer setup (`--setup-only` to retry setup)
+- `pinroll:provision` — blank-host install: PinGate + `platform.zip` extract + installer setup (welcome/manager router, installer disabled; `--setup-only` to retry setup)
 - `pinroll:connect` — configure host + upload PinGate; verifies if already set (`--reset` to redo)
 - `pinroll:apps` — set `hosts.*.apps` (interactive or `--apps=`)
 - `pinroll:check` — verify host connectivity before push
