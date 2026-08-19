@@ -24,6 +24,16 @@ final class HostEnv
             $host['dir'] = $path;
         }
 
+        $webPath = self::read($name, 'WEB_PATH');
+        if ($webPath !== null) {
+            $host['web_path'] = $webPath;
+        }
+
+        $hostname = self::read($name, 'HOSTNAME');
+        if ($hostname !== null) {
+            $host['hostname'] = $hostname;
+        }
+
         $keep = self::read($name, 'KEEP');
         if ($keep !== null && is_numeric($keep)) {
             $host['keep'] = (int) $keep;
@@ -74,6 +84,27 @@ final class HostEnv
                 $ftp['password'] = $ftpPassword;
             }
             $host['ftp'] = $ftp;
+        }
+
+        $sshHost = self::read($name, 'SSH_HOST');
+        $sshUser = self::read($name, 'SSH_USER');
+        $sshKey = self::read($name, 'SSH_KEY');
+        $sshPassword = self::read($name, 'SSH_PASSWORD');
+        if ($sshHost !== null || $sshUser !== null || $sshKey !== null || $sshPassword !== null) {
+            $ssh = is_array($host['ssh'] ?? null) ? $host['ssh'] : [];
+            if ($sshHost !== null) {
+                $ssh['host'] = $sshHost;
+            }
+            if ($sshUser !== null) {
+                $ssh['user'] = $sshUser;
+            }
+            if ($sshKey !== null) {
+                $ssh['key'] = $sshKey;
+            }
+            if ($sshPassword !== null) {
+                $ssh['password'] = $sshPassword;
+            }
+            $host['ssh'] = $ssh;
         }
 
         $provision = is_array($host['provision'] ?? null) ? $host['provision'] : [];

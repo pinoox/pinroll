@@ -28,7 +28,9 @@ test('init scaffolds host and env keys from target name', function () {
         ->and($env)->toContain('PINROLL_MYCONNECT_USER=')
         ->and($env)->toContain('PINROLL_MYCONNECT_PASSWORD=')
         ->and($env)->toContain('PINROLL_MYCONNECT_URL=')
-        ->and($env)->toContain('PINROLL_MYCONNECT_TOKEN=');
+        ->and($env)->toContain('PINROLL_MYCONNECT_TOKEN=')
+        ->and($env)->toContain('PINROLL_MYCONNECT_VIA=')
+        ->and($env)->toContain('PINROLL_MYCONNECT_PATH=');
 
     @unlink($result['config']);
     @rmdir($root . '/.pinoox');
@@ -106,6 +108,7 @@ test('init production host writes unscoped PINROLL_* env stubs', function () {
     $env = file_get_contents($root . '/.env');
     expect($env)->toContain('PINROLL_VIA=')
         ->and($env)->toContain('PINROLL_PATH=')
+        ->and($env)->toContain('PINROLL_WEB_PATH=')
         ->and($env)->toContain('PINROLL_KEEP=')
         ->and($env)->toContain('PINROLL_URL=')
         ->and($env)->toContain('PINROLL_TOKEN=')

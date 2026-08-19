@@ -33,9 +33,9 @@ PHP;
             "    'default_host' => " . var_export((string) ($globals['default_host'] ?? 'production'), true) . ',',
             '',
             '    // Global defaults — inherited by all hosts unless overridden per host',
-            "    'keep' => " . (int) ($globals['keep'] ?? 3) . ',',
-            "    'store' => " . var_export((string) ($globals['store'] ?? 'remote'), true) . ",    // local | remote | both",
-            '    ' . "'auto_clean' => " . (($globals['auto_clean'] ?? true) ? 'true' : 'false') . ',   // prune beyond keep: remote incoming + local incoming/pinx export',
+            "    'keep' => (int) env('PINROLL_KEEP', '" . (int) ($globals['keep'] ?? 3) . "'),",
+            "    'store' => env('PINROLL_STORE', " . var_export((string) ($globals['store'] ?? 'remote'), true) . "),    // local | remote | both",
+            "    'auto_clean' => filter_var(env('PINROLL_AUTO_CLEAN', " . (($globals['auto_clean'] ?? true) ? "'true'" : "'false'") . '), FILTER_VALIDATE_BOOLEAN),   // prune beyond keep: remote incoming + local incoming/pinx export',
             '',
             "    'lang' => env('PINROLL_LANG', 'en'),",
             '',
@@ -104,19 +104,24 @@ PHP;
     private static function renderHost(string $name, array $host): array
     {
         $via = (string) ($host['via'] ?? 'ftp');
-        $deployPath = var_export((string) ($host['deploy_path'] ?? $host['dir'] ?? 'public_html'), true);
+        if ($via === '') {
+            $via = 'ftp';
+        }
+        $deployDefault = (string) ($host['deploy_path'] ?? $host['dir'] ?? 'public_html');
+        if ($deployDefault === '') {
+            $deployDefault = 'public_html';
+        }
+        $webDefault = array_key_exists('web_path', $host)
+            ? HostDir::normalize((string) $host['web_path'])
+            : '';
 
         $lines = [
             '        ' . var_export($name, true) . ' => [',
-            "            'deploy_path' => {$deployPath},",
+            "            'deploy_path' => " . self::hostEnvCall($name, 'path', $deployDefault) . ',',
+            "            'web_path' => " . self::hostEnvCall($name, 'web_path', $webDefault) . ',',
+            "            'via' => " . self::hostEnvCall($name, 'via', $via) . ',',
+            '',
         ];
-
-        if (array_key_exists('web_path', $host)) {
-            $lines[] = "            'web_path' => " . var_export(HostDir::normalize((string) $host['web_path']), true) . ',';
-        }
-
-        $lines[] = "            'via' => " . var_export($via, true) . ',';
-        $lines[] = '';
 
         $lines = array_merge($lines, self::renderApps($host));
         $lines[] = '';
@@ -290,6 +295,16 @@ PHP;
             'user' => $host['user'] ?? ['_env' => ConfigWriter::envKeyFor($name, 'user', 'ftp'), 'default' => ''],
             'password' => $host['password'] ?? ['_env' => ConfigWriter::envKeyFor($name, 'password', 'ftp'), 'default' => ''],
         ];
+    }
+
+    private static function hostEnvCall(string $name, string $field, string $default): string
+    {
+        $key = ConfigWriter::envKeyFor($name, $field);
+        if ($default === '') {
+            return "env('{$key}', '')";
+        }
+
+        return "env('{$key}', " . var_export($default, true) . ')';
     }
 
     private static function exportField(string $target, string $transport, string $field, mixed $value): string

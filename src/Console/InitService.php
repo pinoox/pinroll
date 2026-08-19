@@ -99,6 +99,9 @@ final class InitService
         $targetName = self::normalizeHostName($targetName);
 
         $keys = [
+            ConfigWriter::envKeyFor($targetName, 'via') => 'ftp',
+            ConfigWriter::envKeyFor($targetName, 'path') => 'public_html',
+            ConfigWriter::envKeyFor($targetName, 'web_path') => '',
             ConfigWriter::envKeyFor($targetName, 'host', 'ftp') => '',
             ConfigWriter::envKeyFor($targetName, 'user', 'ftp') => '',
             ConfigWriter::envKeyFor($targetName, 'password', 'ftp') => '',
@@ -110,6 +113,7 @@ final class InitService
             $keys = array_merge([
                 'PINROLL_VIA' => 'ftp',
                 'PINROLL_PATH' => 'public_html',
+                'PINROLL_WEB_PATH' => '',
                 'PINROLL_KEEP' => '3',
                 'PINROLL_STORE' => 'remote',
                 'PINROLL_AUTO_CLEAN' => 'true',

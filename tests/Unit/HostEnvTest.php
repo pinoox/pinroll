@@ -49,6 +49,32 @@ test('host env can build a synthetic production host from env alone', function (
     unset($_ENV['PINROLL_URL'], $_ENV['PINROLL_TOKEN']);
 });
 
+test('host env overlays PINROLL_WEB_PATH and SSH_* onto production', function () {
+    $keys = [
+        'PINROLL_WEB_PATH' => 'shop',
+        'PINROLL_SSH_HOST' => 'vps.example.com',
+        'PINROLL_SSH_USER' => 'deploy',
+    ];
+    foreach ($keys as $key => $value) {
+        putenv($key . '=' . $value);
+        $_ENV[$key] = $value;
+    }
+
+    $host = HostEnv::overlay('production', [
+        'via' => 'ftp',
+        'web_path' => '',
+    ]);
+
+    expect($host['web_path'])->toBe('shop')
+        ->and($host['ssh']['host'])->toBe('vps.example.com')
+        ->and($host['ssh']['user'])->toBe('deploy');
+
+    foreach (array_keys($keys) as $key) {
+        putenv($key);
+        unset($_ENV[$key]);
+    }
+});
+
 test('host env overlays PINROLL_DB_* and PINROLL_ADMIN_* onto production provision', function () {
     $keys = [
         'PINROLL_DB_HOST' => '127.0.0.1',

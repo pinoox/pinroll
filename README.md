@@ -1,6 +1,6 @@
 # Pinroll — Release Rollout Engine
 
-**Pinroll** (`pinoox/pinroll`) **1.4.1** — atomic release rollout, rollback, PinGate delivery, and blank-host provision for Pinoox.
+**Pinroll** (`pinoox/pinroll`) **1.4.2** — atomic release rollout, rollback, PinGate delivery, and blank-host provision for Pinoox.
 
 | Concept | Meaning |
 |---------|---------|

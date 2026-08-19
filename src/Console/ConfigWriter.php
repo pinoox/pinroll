@@ -182,8 +182,29 @@ final class ConfigWriter
             'user' => 'PINROLL_' . $scope . '_USER',
             'key' => 'PINROLL_' . $scope . '_KEY',
             'password' => 'PINROLL_' . $scope . '_PASSWORD',
+            'via', 'path', 'deploy_path', 'dir', 'web_path' => self::layoutEnvKey($target, $field),
             default => 'PINROLL_' . $scope . '_' . strtoupper($field),
         };
+    }
+
+    /**
+     * Production uses unscoped PINROLL_VIA / PINROLL_PATH (same as HostEnv overlay).
+     */
+    private static function layoutEnvKey(string $target, string $field): string
+    {
+        $suffix = match ($field) {
+            'via' => 'VIA',
+            'web_path' => 'WEB_PATH',
+            default => 'PATH',
+        };
+
+        if (in_array(strtolower($target), ['production', 'prod'], true)) {
+            return 'PINROLL_' . $suffix;
+        }
+
+        $slug = strtoupper(preg_replace('/[^a-zA-Z0-9]+/', '_', $target) ?: 'TARGET');
+
+        return 'PINROLL_' . $slug . '_' . $suffix;
     }
 
     public static function isEnvField(string $field): bool

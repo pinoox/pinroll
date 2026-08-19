@@ -22,13 +22,16 @@ test('config writer renders env backed fields via template', function () {
     expect($rendered)->toContain('Pinroll hosts')
         ->toContain("'hosts' => [")
         ->toContain("'deploy_path'")
+        ->toContain("env('PINROLL_VIA', 'ftp')")
+        ->toContain("env('PINROLL_PATH', 'public_html')")
+        ->toContain("env('PINROLL_WEB_PATH', '')")
+        ->toContain("env('PINROLL_KEEP', '3')")
         ->toContain('// Default host when CLI omits the host argument')
         ->toContain('SSH — SFTP upload and remote install')
         ->toContain('Pinion — chunked HTTP upload through PinGate')
         ->toContain("env('PINROLL_PRODUCTION_URL', 'https://pinoox.com/pingate.php?route=')")
         ->toContain("env('PINROLL_PRODUCTION_TOKEN', '')")
         ->toContain("'gate' => [")
-        ->toContain("'via' => 'ftp'")
         ->toContain("env('PINROLL_DB_HOST', 'localhost')")
         ->toContain("env('PINROLL_ADMIN_EMAIL', 'info@pinoox.com')")
         ->toContain("'provision' => [")
@@ -51,5 +54,8 @@ test('config writer normalizes loaded target values', function () {
 });
 
 test('env key helper uses target slug', function () {
-    expect(ConfigWriter::envKeyFor('staging-app', 'host'))->toBe('PINROLL_STAGING_APP_HOST');
+    expect(ConfigWriter::envKeyFor('staging-app', 'host'))->toBe('PINROLL_STAGING_APP_HOST')
+        ->and(ConfigWriter::envKeyFor('production', 'via'))->toBe('PINROLL_VIA')
+        ->and(ConfigWriter::envKeyFor('production', 'path'))->toBe('PINROLL_PATH')
+        ->and(ConfigWriter::envKeyFor('staging', 'via'))->toBe('PINROLL_STAGING_VIA');
 });
