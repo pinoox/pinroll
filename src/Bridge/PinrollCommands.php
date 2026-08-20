@@ -24,6 +24,8 @@ final class PinrollCommands
             \Pinoox\Terminal\Pinroll\PinrollGateInitCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollGateTokenCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollVendorPackCommand::class,
+            \Pinoox\Terminal\Pinroll\PinrollPincoreCommand::class,
+            \Pinoox\Terminal\Pinroll\PinrollSyncCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollBuildCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollStatusCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollHistoryCommand::class,
