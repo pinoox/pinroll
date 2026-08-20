@@ -1,6 +1,7 @@
 <?php
 
 use Pinoox\Pinroll\Console\ConfigWriter;
+use Pinoox\Pinroll\Console\OverlayWriter;
 
 test('setHostApps replaces commented apps block with active apps', function () {
     $path = sys_get_temp_dir() . '/pinroll-apps-' . uniqid('', true) . '.php';
@@ -83,4 +84,21 @@ PHP);
         ->toContain("'apps' => ['com_test_app']");
 
     @unlink($path);
+});
+
+test('setHostApps works with overlay stub apps comment', function () {
+    $root = sys_get_temp_dir() . '/pinroll-apps-stub-' . uniqid('', true);
+    $path = $root . '/.pinoox/pinroll.config.php';
+    OverlayWriter::writeStub($path, 'production');
+
+    ConfigWriter::setHostApps($path, 'production', ['com_pinoox_shop']);
+
+    $contents = (string) file_get_contents($path);
+    expect($contents)
+        ->toContain("'apps' => ['com_pinoox_shop']")
+        ->not->toContain("// 'apps' => ['com_pinoox_account']");
+
+    @unlink($path);
+    @rmdir($root . '/.pinoox');
+    @rmdir($root);
 });

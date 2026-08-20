@@ -23,7 +23,7 @@ test('init scaffolds host and env keys from target name', function () {
         ->and($config)->toContain("'token'")
         ->and($config)->toContain('vendor/pinoox/pinroll/config/pinroll.php')
         ->and($config)->not->toContain("'production' => [")
-        ->and($config)->not->toContain("'provision' => [");
+        ->and($config)->not->toMatch("/^    'provision' => \[/m");
 
     $env = file_get_contents($root . '/.env');
     expect($env)->toContain('PINROLL_MYCONNECT_HOST=')

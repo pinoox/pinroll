@@ -14,7 +14,12 @@ test('overlay writer creates a short stub not a library dump', function () {
     $contents = (string) file_get_contents($path);
     expect($contents)->toContain("'default_host' => 'production'")
         ->and($contents)->toContain("'site'")
-        ->and($contents)->not->toContain("'provision' => [")
+        ->and($contents)->toContain("// 'keep' => 3")
+        ->and($contents)->toContain("// 'provision' => [")
+        ->and($contents)->toContain("// 'build' => [")
+        ->and($contents)->toContain("// 'web_path' => ''")
+        ->and($contents)->toContain("// 'ssh' => [")
+        ->and($contents)->not->toMatch("/^    'provision' => \[/m")
         ->and($contents)->not->toContain("'storage_path'");
 
     @unlink($path);

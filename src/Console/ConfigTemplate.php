@@ -26,6 +26,7 @@ PHP;
  *
  * Canonical schema: vendor/pinoox/pinroll/config/pinroll.php
  * Override any key. Secrets (token, FTP password) belong here.
+ * Uncomment the samples below to change library defaults.
  *
  * One token per host — share it with teammates. `pinroll:gate --rotate`
  * uploads a new hash and invalidates everyone else.
@@ -48,8 +49,41 @@ PHP;
             "    'default_host' => " . var_export($hostName, true) . ',',
             '',
             '    // Optional global overrides (uncomment to change library defaults)',
-            "    // 'keep' => 3,",
-            "    // 'store' => 'remote',",
+            "    // 'keep' => 3,                     // newest N archives; 0 = no prune",
+            "    // 'store' => 'remote',             // local | remote | both",
+            "    // 'auto_clean' => true,            // prune after successful install",
+            "    // 'clean_before_deploy' => true,   // prune leftovers before each upload",
+            "    // 'stale_days' => 7,               // also delete archives older than N days; 0 = keep-count only",
+            "    // 'lang' => 'en',                  // installer / provision locale",
+            "    // 'gate_embed_token' => false,     // false = token file on host, not inside pingate.php",
+            "    // 'chunk_size' => 5 * 1024 * 1024, // Pinion HTTP upload chunk (bytes)",
+            '',
+            '    // First-time host install (pinroll:provision) — same fields as the web installer',
+            "    // 'provision' => [",
+            "    //     'db' => [",
+            "    //         'host' => 'localhost',",
+            "    //         'database' => 'pinoox',",
+            "    //         'username' => '',",
+            "    //         'password' => '',",
+            "    //         'connection' => 'mysql',",
+            "    //         'port' => '3306',",
+            "    //         'prefix' => 'pin_',",
+            "    //         'timezone' => '+03:30',",
+            '    //     ],',
+            "    //     'user' => [",
+            "    //         'fname' => 'support',",
+            "    //         'lname' => 'pinoox',",
+            "    //         'email' => 'info@pinoox.com',",
+            "    //         'username' => 'admin',",
+            "    //         'password' => '123456',",
+            '    //     ],',
+            '    // ],',
+            '',
+            '    // Extra platform zip rules (merged with platform/build.config.php)',
+            "    // 'build' => [",
+            "    //     'exclude' => ['docs', 'tests'],",
+            "    //     'include' => [],",
+            '    // ],',
             '',
             "    'hosts' => [",
         ];
@@ -86,22 +120,39 @@ PHP;
             '        ' . var_export($name, true) . ' => [',
         ];
 
-        if (array_key_exists('deploy_path', $host) || array_key_exists('dir', $host)) {
-            $deploy = (string) ($host['deploy_path'] ?? $host['dir'] ?? 'public_html');
-            $lines[] = "            'deploy_path' => " . var_export($deploy, true) . ',';
+        $deploy = array_key_exists('deploy_path', $host) || array_key_exists('dir', $host)
+            ? (string) ($host['deploy_path'] ?? $host['dir'] ?? 'public_html')
+            : 'public_html';
+        if ($deploy === '') {
+            $deploy = 'public_html';
         }
+        $lines[] = "            'deploy_path' => " . var_export($deploy, true) . ',  // FTP/SSH folder at account root';
 
         if (array_key_exists('web_path', $host)) {
-            $lines[] = "            'web_path' => " . var_export(HostDir::normalize((string) $host['web_path']), true) . ',';
+            $lines[] = "            'web_path' => " . var_export(HostDir::normalize((string) $host['web_path']), true) . ',  // URL subfolder; \'\' = domain/subdomain root';
+        } else {
+            $lines[] = "            // 'web_path' => '',  // URL subfolder (e.g. 'shop'); '' = domain/subdomain root";
         }
 
         if (array_key_exists('via', $host)) {
             $via = (string) ($host['via'] ?: 'ftp');
-            $lines[] = "            'via' => " . var_export($via, true) . ',';
+            $lines[] = "            'via' => " . var_export($via, true) . ',  // ftp | ssh | pinion | local';
         } else {
-            $lines[] = "            'via' => 'ftp',";
+            $lines[] = "            'via' => 'ftp',  // ftp | ssh | pinion | local";
         }
 
+        if (!empty($host['apps']) && is_array($host['apps'])) {
+            $apps = array_values(array_filter(array_map('strval', $host['apps'])));
+            if ($apps !== []) {
+                $exported = implode(', ', array_map(static fn (string $app): string => var_export($app, true), $apps));
+                $lines[] = '            // Default app packages for push/install on this host';
+                $lines[] = "            'apps' => [{$exported}],";
+            } else {
+                $lines[] = "            // 'apps' => ['com_pinoox_account'],  // default packages for push/install";
+            }
+        } else {
+            $lines[] = "            // 'apps' => ['com_pinoox_account'],  // default packages for push/install";
+        }
         $lines[] = "            'gate' => [";
         $lines[] = "                'site' => " . var_export($site, true) . ',  // origin only, e.g. https://pinoox.com';
         $lines[] = "                'token' => " . var_export($token, true) . ',  // shared host token';
@@ -118,6 +169,16 @@ PHP;
             $lines[] = "            //     'password' => '',";
             $lines[] = '            // ],';
         }
+
+        $lines[] = "            // 'ssh' => [";
+        $lines[] = "            //     'host' => '',";
+        $lines[] = "            //     'user' => '',";
+        $lines[] = "            //     'key' => '',";
+        $lines[] = '            // ],';
+        $lines[] = "            // 'hooks' => [";
+        $lines[] = "            //     'before_push' => ['npm run build'],";
+        $lines[] = "            //     'after_install' => ['php pinoox cache:build'],";
+        $lines[] = '            // ],';
 
         $lines[] = '        ],';
         $lines[] = '';
@@ -140,11 +201,15 @@ PHP;
             "    'default_host' => " . var_export((string) ($globals['default_host'] ?? 'production'), true) . ',',
             '',
             '    // Global defaults — inherited by all hosts unless overridden per host',
-            "    'keep' => (int) env('PINROLL_KEEP', '" . (int) ($globals['keep'] ?? 3) . "'),",
+            "    'keep' => (int) env('PINROLL_KEEP', '" . (int) ($globals['keep'] ?? 3) . "'),  // newest N archives; 0 = no prune",
             "    'store' => env('PINROLL_STORE', " . var_export((string) ($globals['store'] ?? 'remote'), true) . "),    // local | remote | both",
-            "    'auto_clean' => filter_var(env('PINROLL_AUTO_CLEAN', " . (($globals['auto_clean'] ?? true) ? "'true'" : "'false'") . '), FILTER_VALIDATE_BOOLEAN),   // prune beyond keep: remote incoming + local incoming/pinx export',
+            "    'auto_clean' => filter_var(env('PINROLL_AUTO_CLEAN', " . (($globals['auto_clean'] ?? true) ? "'true'" : "'false'") . '), FILTER_VALIDATE_BOOLEAN),   // prune beyond keep after install',
+            "    'clean_before_deploy' => filter_var(env('PINROLL_CLEAN_BEFORE_DEPLOY', 'true'), FILTER_VALIDATE_BOOLEAN),  // prune leftovers before each upload",
+            "    'stale_days' => (int) env('PINROLL_STALE_DAYS', '7'),  // also delete archives older than N days; 0 = keep-count only",
+            "    // 'gate_embed_token' => false,  // false = token file on host, not inside pingate.php",
+            "    // 'chunk_size' => 5 * 1024 * 1024,  // Pinion HTTP upload chunk (bytes)",
             '',
-            "    'lang' => env('PINROLL_LANG', 'en'),",
+            "    'lang' => env('PINROLL_LANG', 'en'),  // installer / provision locale",
             '',
             '    // First-time host install (pinroll:provision) — same fields as the web installer',
             "    'provision' => [",

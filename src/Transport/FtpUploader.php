@@ -9,10 +9,14 @@ use Pinoox\Pinroll\Support\PushProgressBar;
 
 final class FtpUploader
 {
+    public const CONNECT_TIMEOUT = 30;
+
+    public const TRANSFER_TIMEOUT = 600;
+
     /**
-     * @param resource $connection
+     * @return resource|\FTP\Connection
      */
-    public function connect(string $host, string $user, string $password, int $timeout = 20)
+    public function connect(string $host, string $user, string $password, int $timeout = self::CONNECT_TIMEOUT, int $transferTimeout = self::TRANSFER_TIMEOUT)
     {
         if (!function_exists('ftp_connect')) {
             throw new PinrollException('FTP extension is not available.');
@@ -27,11 +31,15 @@ final class FtpUploader
         }
 
         if (function_exists('ftp_set_option')) {
-            @ftp_set_option($connection, FTP_TIMEOUT_SEC, $timeout);
+            @ftp_set_option($connection, FTP_TIMEOUT_SEC, max($timeout, $transferTimeout));
+            if (defined('FTP_USEPASVADDRESS')) {
+                // Ignore private/NAT IP from PASV — use the control-connection host instead.
+                @ftp_set_option($connection, FTP_USEPASVADDRESS, false);
+            }
         }
 
         if (!@ftp_login($connection, $user, $password)) {
-            ftp_close($connection);
+            $this->close($connection);
             throw new PinrollException('FTP login failed. Check PINROLL_*_USER / PASSWORD.');
         }
 
@@ -42,6 +50,28 @@ final class FtpUploader
         }
 
         return $connection;
+    }
+
+    /**
+     * Seconds for a transfer: ~50 KB/s floor, capped at 1 hour.
+     */
+    public static function transferTimeoutForSize(int $bytes): int
+    {
+        if ($bytes <= 0) {
+            return self::TRANSFER_TIMEOUT;
+        }
+
+        return max(self::TRANSFER_TIMEOUT, min(3600, (int) ceil($bytes / (50 * 1024)) + 60));
+    }
+
+    /**
+     * @param resource|\FTP\Connection $connection
+     */
+    public function close($connection): void
+    {
+        if (is_resource($connection) || (is_object($connection) && $connection instanceof \FTP\Connection)) {
+            @ftp_close($connection);
+        }
     }
 
     /**
@@ -91,7 +121,7 @@ final class FtpUploader
             PushProgress::pulse(
                 $label . ($size > 0 ? '  ' . PushProgressBar::bytes($size) : ''),
             );
-            $ret = ftp_nb_continue($connection);
+            $ret = @ftp_nb_continue($connection);
         }
 
         if ($ret !== FTP_FINISHED) {
@@ -139,10 +169,11 @@ final class FtpUploader
             CURLOPT_INFILESIZE => $size,
             CURLOPT_USERNAME => $user,
             CURLOPT_PASSWORD => $password,
-            CURLOPT_TIMEOUT => 30,
-            CURLOPT_CONNECTTIMEOUT => 20,
+            CURLOPT_TIMEOUT => self::transferTimeoutForSize($size),
+            CURLOPT_CONNECTTIMEOUT => self::CONNECT_TIMEOUT,
             CURLOPT_FTP_CREATE_MISSING_DIRS => $createDir,
             CURLOPT_FTP_USE_EPSV => false,
+            CURLOPT_FTP_SKIP_PASV_IP => true,
             CURLOPT_NOPROGRESS => false,
             CURLOPT_PROGRESSFUNCTION => static function ($resource, $dltotal, $dlnow, $ultotal, $ulnow) use ($label, $size): int {
                 unset($resource, $dltotal, $dlnow);

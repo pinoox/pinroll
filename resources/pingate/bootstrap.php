@@ -52,6 +52,23 @@ function pinroll_pingate_run(string $root, array $gateConfig = []): void
         return;
     }
 
+    if ($method === 'POST' && str_starts_with($path, 'put/')) {
+        $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null);
+        $input = [];
+        if ($path === 'put/upload') {
+            $input = is_array($_POST) ? $_POST : [];
+            if (isset($_FILES['chunk']['tmp_name']) && is_string($_FILES['chunk']['tmp_name'])) {
+                $input['chunk'] = $_FILES['chunk']['tmp_name'];
+            }
+        } else {
+            $decoded = json_decode((string) file_get_contents('php://input'), true);
+            $input = is_array($decoded) ? $decoded : [];
+        }
+        pinroll_handle_put_zip($root, $gateConfig, $path, $input, $auth);
+
+        return;
+    }
+
     $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null);
     if (!pinroll_gate_try_auth($root, $gateConfig, $auth)) {
         return;
@@ -770,6 +787,246 @@ function pinroll_handle_platform_bootstrap(string $root, array $gateConfig, arra
             'autoload' => true,
         ],
     ], JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Chunked upload of platform.zip / vendor.zip next to pingate.php (blank host — no vendor/autoload).
+ *
+ * @param array<string, mixed> $gateConfig
+ * @param array<string, mixed> $input
+ */
+function pinroll_handle_put_zip(string $root, array $gateConfig, string $path, array $input, ?string $authorization): void
+{
+    $rootReal = realpath($root);
+    if ($rootReal === false || !is_dir($rootReal)) {
+        pinroll_gate_json_error(500, 'Invalid platform root.');
+
+        return;
+    }
+    $root = str_replace('\\', '/', $rootReal);
+
+    if (!pinroll_vendor_gate_auth($root, $gateConfig, $authorization)) {
+        return;
+    }
+
+    $path = trim($path, '/');
+    try {
+        $result = match ($path) {
+            'put/init' => pinroll_put_zip_init($root, $input),
+            'put/upload' => pinroll_put_zip_chunk($root, $input),
+            'put/complete' => pinroll_put_zip_complete($root, $input),
+            default => throw new RuntimeException('Unknown PinGate route: ' . $path, 404),
+        };
+    } catch (Throwable $e) {
+        pinroll_gate_json_error((int) ($e->getCode() ?: 500), $e->getMessage());
+
+        return;
+    }
+
+    header('Content-Type: application/json');
+    header('X-Content-Type-Options: nosniff');
+    echo json_encode(['success' => true, 'data' => $result], JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * @param array<string, mixed> $input
+ * @return array<string, mixed>
+ */
+function pinroll_put_zip_init(string $root, array $input): array
+{
+    $filename = basename((string) ($input['filename'] ?? ''));
+    if (!in_array($filename, ['platform.zip', 'vendor.zip'], true)) {
+        throw new RuntimeException('Only platform.zip or vendor.zip can be uploaded this way.', 400);
+    }
+
+    $size = (int) ($input['size'] ?? 0);
+    $max = $filename === 'platform.zip' ? 400 * 1024 * 1024 : 200 * 1024 * 1024;
+    if ($size < 1 || $size > $max) {
+        throw new RuntimeException('Zip size is invalid or too large.', 400);
+    }
+
+    $dir = pinroll_put_zip_dir($root);
+    if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+        throw new RuntimeException('Unable to create upload directory.', 500);
+    }
+
+    foreach (glob($dir . '/*.json') ?: [] as $sessionFile) {
+        $existing = json_decode((string) file_get_contents($sessionFile), true);
+        if (!is_array($existing) || (string) ($existing['filename'] ?? '') !== $filename) {
+            continue;
+        }
+        if ((int) ($existing['size'] ?? 0) !== $size) {
+            continue;
+        }
+        $id = (string) ($existing['id'] ?? '');
+        $part = $dir . '/' . $id . '.part';
+        if ($id === '' || !is_file($part)) {
+            continue;
+        }
+        $received = (int) filesize($part);
+        if ($received < 1 || $received >= $size) {
+            continue;
+        }
+        $existing['received'] = $received;
+        file_put_contents($sessionFile, json_encode($existing, JSON_THROW_ON_ERROR));
+
+        return [
+            'id' => $id,
+            'upload_id' => $id,
+            'filename' => $filename,
+            'size' => $size,
+            'received' => $received,
+            'resumed' => true,
+        ];
+    }
+
+    $id = 'pbl_' . bin2hex(random_bytes(12));
+    $session = [
+        'id' => $id,
+        'filename' => $filename,
+        'size' => $size,
+        'received' => 0,
+    ];
+    if (file_put_contents($dir . '/' . $id . '.json', json_encode($session, JSON_THROW_ON_ERROR)) === false) {
+        throw new RuntimeException('Unable to create upload session.', 500);
+    }
+
+    return ['id' => $id, 'upload_id' => $id, 'filename' => $filename, 'size' => $size];
+}
+
+/**
+ * @param array<string, mixed> $input
+ * @return array<string, mixed>
+ */
+function pinroll_put_zip_chunk(string $root, array $input): array
+{
+    $session = pinroll_put_zip_load($root, (string) ($input['upload_id'] ?? $input['uploadId'] ?? ''));
+    $index = (int) ($input['index'] ?? -1);
+    if ($index < 0) {
+        throw new RuntimeException('Chunk index is required.', 400);
+    }
+
+    $binary = '';
+    $chunk = $input['chunk'] ?? null;
+    if (is_string($chunk) && is_file($chunk)) {
+        $binary = (string) file_get_contents($chunk);
+    } elseif (is_string($chunk) && $chunk !== '') {
+        $binary = $chunk;
+    }
+    if ($binary === '') {
+        throw new RuntimeException('Empty chunk.', 400);
+    }
+
+    $part = pinroll_put_zip_dir($root) . '/' . $session['id'] . '.part';
+    $handle = fopen($part, 'cb');
+    if ($handle === false) {
+        throw new RuntimeException('Unable to open part file.', 500);
+    }
+
+    try {
+        flock($handle, LOCK_EX);
+        fseek($handle, 0, SEEK_END);
+        $written = fwrite($handle, $binary);
+        fflush($handle);
+    } finally {
+        flock($handle, LOCK_UN);
+        fclose($handle);
+    }
+
+    if ($written === false || $written !== strlen($binary)) {
+        throw new RuntimeException('Failed to write chunk ' . $index . '.', 500);
+    }
+
+    $session['received'] = (int) filesize($part);
+    file_put_contents(
+        pinroll_put_zip_dir($root) . '/' . $session['id'] . '.json',
+        json_encode($session, JSON_THROW_ON_ERROR),
+    );
+
+    return ['id' => $session['id'], 'index' => $index, 'received' => $session['received']];
+}
+
+/**
+ * @param array<string, mixed> $input
+ * @return array<string, mixed>
+ */
+function pinroll_put_zip_complete(string $root, array $input): array
+{
+    $session = pinroll_put_zip_load($root, (string) ($input['upload_id'] ?? $input['uploadId'] ?? ''));
+    $dir = pinroll_put_zip_dir($root);
+    $part = $dir . '/' . $session['id'] . '.part';
+    if (!is_file($part)) {
+        throw new RuntimeException('Upload part file is missing.', 400);
+    }
+
+    $size = (int) filesize($part);
+    if ($size !== (int) $session['size']) {
+        throw new RuntimeException('Upload size mismatch (got ' . $size . ', expected ' . $session['size'] . ').', 400);
+    }
+
+    $fileHash = (string) ($input['file_hash'] ?? $input['fileHash'] ?? '');
+    if ($fileHash !== '') {
+        $actual = hash_file('sha256', $part);
+        if (!is_string($actual) || !hash_equals(strtolower($fileHash), strtolower($actual))) {
+            throw new RuntimeException('Upload checksum mismatch.', 400);
+        }
+    }
+
+    $dest = $root . '/' . $session['filename'];
+    if (is_file($dest)) {
+        @unlink($dest);
+    }
+    if (!@rename($part, $dest)) {
+        if (!@copy($part, $dest)) {
+            throw new RuntimeException('Unable to move zip into place.', 500);
+        }
+        @unlink($part);
+    }
+    @unlink($dir . '/' . $session['id'] . '.json');
+
+    return [
+        'id' => $session['id'],
+        'filename' => $session['filename'],
+        'path' => $session['filename'],
+        'size' => $size,
+    ];
+}
+
+function pinroll_put_zip_dir(string $root): string
+{
+    return rtrim($root, '/') . '/storage/pinroll/put';
+}
+
+/**
+ * @return array{id: string, filename: string, size: int, received: int}
+ */
+function pinroll_put_zip_load(string $root, string $id): array
+{
+    if (!preg_match('/^pbl_[a-zA-Z0-9]{16,}$/', $id)) {
+        throw new RuntimeException('Invalid upload id.', 400);
+    }
+
+    $file = pinroll_put_zip_dir($root) . '/' . $id . '.json';
+    if (!is_file($file)) {
+        throw new RuntimeException('Upload session not found.', 404);
+    }
+
+    $decoded = json_decode((string) file_get_contents($file), true);
+    if (!is_array($decoded) || (string) ($decoded['id'] ?? '') !== $id) {
+        throw new RuntimeException('Upload session is corrupt.', 400);
+    }
+
+    $filename = (string) ($decoded['filename'] ?? '');
+    if (!in_array($filename, ['platform.zip', 'vendor.zip'], true)) {
+        throw new RuntimeException('Upload session filename is not allowed.', 400);
+    }
+
+    return [
+        'id' => $id,
+        'filename' => $filename,
+        'size' => (int) ($decoded['size'] ?? 0),
+        'received' => (int) ($decoded['received'] ?? 0),
+    ];
 }
 
 /**

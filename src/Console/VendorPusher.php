@@ -44,26 +44,27 @@ final class VendorPusher
             );
         }
 
-        $uploader = new FtpUploader();
-        $connection = $uploader->connect(
-            (string) ($resolved['host'] ?? ''),
-            (string) ($resolved['user'] ?? ''),
-            (string) ($resolved['password'] ?? ''),
-        );
-
         $prefix = HostDir::deployRoot(HostDir::fromTarget($resolved));
         $prefix = $prefix === '.' ? '' : rtrim($prefix, '/') . '/';
         $remoteZip = $prefix . 'vendor.zip';
+        $host = (string) ($resolved['host'] ?? '');
+        $user = (string) ($resolved['user'] ?? '');
+        $password = (string) ($resolved['password'] ?? '');
+        $uploader = new FtpUploader();
 
+        PushProgress::arrow('FTP upload ' . basename($localZip) . ' → ' . $remoteZip);
         try {
-            PushProgress::arrow('FTP upload ' . basename($localZip) . ' → ' . $remoteZip);
-            $uploader->uploadFile($connection, $localZip, $remoteZip);
-            PushProgress::arrow('FTP upload done');
-        } finally {
-            if (is_resource($connection)) {
-                ftp_close($connection);
+            $uploader->uploadFileCurl($host, $user, $password, $localZip, $remoteZip);
+        } catch (\Throwable $curlError) {
+            PushProgress::detail('cURL FTP failed — trying PHP FTP: ' . $curlError->getMessage());
+            $connection = $uploader->connect($host, $user, $password);
+            try {
+                $uploader->uploadFile($connection, $localZip, $remoteZip);
+            } finally {
+                $uploader->close($connection);
             }
         }
+        PushProgress::arrow('FTP upload done');
 
         PushProgress::arrow('PinGate extract vendor.zip');
         $extract = PinGateClient::extractVendor($gateUrl, $token, []);

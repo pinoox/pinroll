@@ -47,13 +47,23 @@ final class ZipPusher
         $prefix = $prefix === '.' ? '' : rtrim($prefix, '/') . '/';
         $remoteZip = $prefix . $remoteName;
 
-        match ($transport) {
-            'ftp' => $this->uploadFtp($resolved, $localZip, $remoteZip),
-            'ssh' => $this->uploadSsh($resolved, $localZip, $remoteZip),
-            default => throw new PinrollException(
-                'Zip upload for provision/vendor supports FTP or SSH. Host transport: ' . $transport,
-            ),
-        };
+        try {
+            $this->uploadHttp($gateUrl, $token, $localZip, $remoteName);
+        } catch (\Throwable $httpError) {
+            $message = $httpError->getMessage();
+            $oldGate = str_contains($message, 'upload id')
+                || str_contains($message, 'Unknown PinGate route')
+                || str_contains($message, 'put/init');
+            if (!$oldGate || $transport === 'pinion') {
+                throw $httpError;
+            }
+            PushProgress::warn('PinGate HTTP zip upload failed — trying ' . $transport . ': ' . $message);
+            match ($transport) {
+                'ftp' => $this->uploadFtp($resolved, $localZip, $remoteZip),
+                'ssh' => $this->uploadSsh($resolved, $localZip, $remoteZip),
+                default => throw $httpError,
+            };
+        }
 
         PushProgress::arrow('PinGate extract ' . $remoteName);
         $result = $extract($gateUrl, $token);
@@ -69,21 +79,35 @@ final class ZipPusher
      */
     private function uploadFtp(array $resolved, string $localZip, string $remoteZip): void
     {
+        $host = (string) ($resolved['host'] ?? '');
+        $user = (string) ($resolved['user'] ?? '');
+        $password = (string) ($resolved['password'] ?? '');
         $uploader = new FtpUploader();
+
+        PushProgress::arrow('FTP upload ' . basename($localZip) . ' → ' . $remoteZip);
+        try {
+            $uploader->uploadFileCurl($host, $user, $password, $localZip, $remoteZip);
+            PushProgress::arrow('FTP upload done');
+
+            return;
+        } catch (\Throwable $curlError) {
+            PushProgress::detail('cURL FTP failed — trying PHP FTP: ' . $curlError->getMessage());
+        }
+
+        $size = is_file($localZip) ? (int) filesize($localZip) : 0;
         $connection = $uploader->connect(
-            (string) ($resolved['host'] ?? ''),
-            (string) ($resolved['user'] ?? ''),
-            (string) ($resolved['password'] ?? ''),
+            $host,
+            $user,
+            $password,
+            FtpUploader::CONNECT_TIMEOUT,
+            FtpUploader::transferTimeoutForSize($size),
         );
 
         try {
-            PushProgress::arrow('FTP upload ' . basename($localZip) . ' → ' . $remoteZip);
             $uploader->uploadFile($connection, $localZip, $remoteZip);
             PushProgress::arrow('FTP upload done');
         } finally {
-            if (is_resource($connection)) {
-                ftp_close($connection);
-            }
+            $uploader->close($connection);
         }
     }
 
@@ -121,5 +145,10 @@ final class ZipPusher
             throw new PinrollException('SFTP upload failed: ' . $remoteZip);
         }
         PushProgress::arrow('SFTP upload done');
+    }
+
+    private function uploadHttp(string $gateUrl, string $token, string $localZip, string $remoteName): void
+    {
+        (new GateZipUploader())->upload($gateUrl, $token, $localZip, $remoteName);
     }
 }

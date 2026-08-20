@@ -109,6 +109,20 @@ final class PinGateTransport
             ];
         }
 
+        $headers = array_values($headers);
+        if ($method === 'POST') {
+            $hasExpect = false;
+            foreach ($headers as $header) {
+                if (stripos($header, 'Expect:') === 0) {
+                    $hasExpect = true;
+                    break;
+                }
+            }
+            if (!$hasExpect) {
+                $headers[] = 'Expect:';
+            }
+        }
+
         $options = [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_CUSTOMREQUEST => $method,
@@ -118,6 +132,7 @@ final class PinGateTransport
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
             CURLOPT_FOLLOWLOCATION => false,
         ];
 
@@ -179,6 +194,7 @@ final class PinGateTransport
                 'content' => $method === 'POST' ? $content : '',
                 'timeout' => $timeout,
                 'ignore_errors' => true,
+                'protocol_version' => 1.1,
             ],
             'ssl' => $ssl,
         ]);

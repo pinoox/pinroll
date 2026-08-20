@@ -92,3 +92,42 @@ test('app pinx archive is not treated as platform zip', function () {
     @unlink($archive);
     @rmdir($tmp);
 });
+
+test('blank-host put zip assembles platform.zip from chunks', function () {
+    $tmp = sys_get_temp_dir() . '/pinroll-put-' . bin2hex(random_bytes(4));
+    mkdir($tmp, 0755, true);
+
+    $payload = str_repeat('Pinoox', 1024);
+    $init = pinroll_put_zip_init($tmp, [
+        'filename' => 'platform.zip',
+        'size' => strlen($payload),
+    ]);
+    expect($init['id'])->toStartWith('pbl_');
+
+    $mid = (int) floor(strlen($payload) / 2);
+    pinroll_put_zip_chunk($tmp, [
+        'upload_id' => $init['id'],
+        'index' => 0,
+        'chunk' => substr($payload, 0, $mid),
+    ]);
+    pinroll_put_zip_chunk($tmp, [
+        'upload_id' => $init['id'],
+        'index' => 1,
+        'chunk' => substr($payload, $mid),
+    ]);
+
+    $done = pinroll_put_zip_complete($tmp, [
+        'upload_id' => $init['id'],
+        'file_hash' => hash('sha256', $payload),
+    ]);
+
+    expect($done['filename'])->toBe('platform.zip')
+        ->and(is_file($tmp . '/platform.zip'))->toBeTrue()
+        ->and((string) file_get_contents($tmp . '/platform.zip'))->toBe($payload);
+
+    @unlink($tmp . '/platform.zip');
+    if (function_exists('pinroll_remove_directory')) {
+        pinroll_remove_directory($tmp . '/storage');
+    }
+    @rmdir($tmp);
+});

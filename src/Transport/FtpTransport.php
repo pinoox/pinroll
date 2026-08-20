@@ -72,9 +72,7 @@ final class FtpTransport implements TransportInterface
                 $session->addStep('vendor', 'ok', 'vendor/ synced (' . $count . ' files)');
             }
         } finally {
-            if (is_resource($connection)) {
-                @ftp_close($connection);
-            }
+            $uploader->close($connection);
         }
     }
 
