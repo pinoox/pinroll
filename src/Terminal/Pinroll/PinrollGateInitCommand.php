@@ -32,7 +32,8 @@ class PinrollGateInitCommand extends Terminal
             ->addOption('zip', 'z', InputOption::VALUE_NONE, 'Also build pinroll/deploy-{host}.zip (manual upload)')
             ->addOption('no-upload', null, InputOption::VALUE_NONE, 'Skip upload; keep files in pinroll/')
             ->addOption('with-vendor', null, InputOption::VALUE_NONE, 'Bundle pinroll vendor into gate/ (slow; only if host lacks pinroll)')
-            ->addOption('rotate', null, InputOption::VALUE_NONE, 'Mint a new token and invalidate other developers (default: reuse overlay token)')
+            ->addOption('rotate', null, InputOption::VALUE_NONE, 'Mint a new local gate.token (upload your storage/pinroll/tokens/{label}.php afterward)')
+            ->addOption('embed-token', null, InputOption::VALUE_NONE, 'Embed token hash inside pingate.php (legacy — breaks multi-developer tokens on redeploy)')
             ->addOption('via', null, InputOption::VALUE_REQUIRED, 'Transport override: ftp or ssh');
     }
 
@@ -48,6 +49,7 @@ class PinrollGateInitCommand extends Terminal
             $upload = !(bool) $input->getOption('no-upload');
             $rotate = (bool) $input->getOption('rotate');
             $withVendor = (bool) $input->getOption('with-vendor');
+            $embedToken = (bool) $input->getOption('embed-token');
 
             $host = TargetHostSetup::resolveForGateInit($io, $input, (string) $root, $hostName);
             PushProgress::bind(
@@ -80,6 +82,7 @@ class PinrollGateInitCommand extends Terminal
                     $rotate,
                     $upload,
                     $withVendor,
+                    $embedToken,
                 );
             } finally {
                 PushProgress::bind(null);

@@ -119,6 +119,7 @@ final class PinrollCli
         $zip = (string) ($data['zip'] ?? '');
         $extractTo = (string) ($data['extract_to'] ?? '');
         $uploaded = (bool) ($data['uploaded'] ?? false);
+        $embedToken = (bool) ($data['embed_token'] ?? false);
 
         $displayUrl = $isExample
             ? \Pinoox\Pinroll\Target\TargetGate::exampleUrl($dir !== '' ? $dir : null)
@@ -129,14 +130,27 @@ final class PinrollCli
 
         if ($token !== '') {
             $reused = (bool) ($data['token_reused'] ?? false);
-            $io->section($reused ? 'Token (reused — hash matches host)' : 'Token (written to overlay)');
+            $io->section($reused ? 'Local token (reused from overlay)' : 'Local token (written to overlay)');
             $io->writeln('  <info>' . self::escape($token) . '</info>');
             if ($reused) {
-                $io->writeln('  <fg=gray>Rotate (invalidates teammates):</> <comment>php pinoox pinroll:gate ' . $target . ' --rotate</comment>');
+                $io->writeln('  <fg=gray>New local token:</> <comment>php pinoox pinroll:gate ' . $target . ' --rotate</comment>');
             } else {
                 $overlay = (string) ($data['overlay_path'] ?? $data['env_path'] ?? '.pinoox/pinroll.config.php');
                 $io->writeln('  <fg=gray>Saved to</> <comment>' . self::escape(self::relPath($overlay)) . '</comment> <fg=gray>as gate.token</>');
             }
+        }
+
+        if (!$embedToken) {
+            $io->section('Host auth (multi-developer)');
+            $io->writeln([
+                '  <fg=gray>pingate.php has</> <comment>no embedded token</comment> <fg=gray>(safe to redeploy).</>',
+                '  Each developer uploads their own file:',
+                '  <comment>storage/pinroll/tokens/{label}.php</comment>',
+                '  Mint: <comment>php pinoox pinroll:token {label}</comment>',
+            ]);
+        } else {
+            $io->section('Host auth (legacy embed)');
+            $io->writeln('  <fg=yellow>Token hash is embedded in pingate.php — redeploy may affect single-hash setups.</>');
         }
 
         $site = (string) ($data['site'] ?? '');
@@ -157,9 +171,9 @@ final class PinrollCli
         $io->writeln([
             "  <fg=gray>'gate' => [</>",
             "      'site' => '" . self::escape($site !== '' ? $site : 'https://example.com') . "',",
-            "      'token' => '" . ($token !== '' ? self::escape($token) : '<shared-host-token>') . "',",
+            "      'token' => '" . ($token !== '' ? self::escape($token) : '<your-local-token>') . "',",
             '  ],',
-            '  <fg=gray>One token per host. Do not --rotate unless you intend to invalidate teammates.</>',
+            '  <fg=gray>Local plain token for CLI — host uses storage/pinroll/tokens/{label}.php</>',
         ]);
 
         if ($uploaded) {

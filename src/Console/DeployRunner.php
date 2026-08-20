@@ -406,6 +406,7 @@ final class DeployRunner
         bool $rotateToken = false,
         bool $upload = true,
         bool $withVendor = false,
+        ?bool $embedToken = null,
     ): array {
         $target = Pinroll::hosts()->resolve($targetName);
         $raw = Pinroll::hosts()->raw($targetName);
@@ -416,7 +417,8 @@ final class DeployRunner
             ? $existing['token']
             : TokenGenerator::token();
         $tokenReused = !$rotateToken && $existing['token'] !== '' && $token === $existing['token'];
-        $hash = TokenGenerator::hashToken($token);
+        $embed = $embedToken ?? (bool) ($raw['gate_embed_token'] ?? Pinroll::config()->get('gate_embed_token', false));
+        $hash = $embed ? TokenGenerator::hashToken($token) : '';
 
         $dir = $hostDir !== null ? HostDir::normalize($hostDir) : HostDir::fromTarget($target);
         $webForUrl = HostDir::webPathFromHost(array_key_exists('web_path', $raw)
@@ -496,6 +498,7 @@ final class DeployRunner
             'extract_to' => HostDir::extractGuidePath($dir),
             'uploaded' => $uploaded,
             'upload' => $uploadInfo,
+            'embed_token' => $embed,
         ];
     }
 

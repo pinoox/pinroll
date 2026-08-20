@@ -32,6 +32,9 @@ return [
     'stale_days' => 7,
     'lang' => 'en',
 
+    /** When false (default), pingate.php has no embedded token — use storage/pinroll/tokens/{label}.php on the host. */
+    'gate_embed_token' => false,
+
     'provision' => [
         'db' => [
             'host' => 'localhost',
