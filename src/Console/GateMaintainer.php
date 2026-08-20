@@ -36,6 +36,20 @@ final class GateMaintainer
             return;
         }
 
+        if (GateDeployer::canUpload($resolvedTarget)) {
+            $runner ??= new DeployRunner(Pinroll::paths()->root());
+            PushProgress::arrow('Sync PinGate bootstrap (pingate.php)…');
+            $runner->initGate(
+                $hostName,
+                false,
+                HostDir::fromTarget($rawTarget),
+                $gateUrl,
+                false,
+                true,
+                embedToken: false,
+            );
+        }
+
         self::ensureReady($gateUrl, $token, $hostName, $resolvedTarget, $rawTarget, $runner);
     }
 
