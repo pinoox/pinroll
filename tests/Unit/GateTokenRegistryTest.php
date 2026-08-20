@@ -48,3 +48,7 @@ it('accepts legacy env and embedded hashes', function () {
 it('builds host upload path from label', function () {
     expect(GateTokenRegistry::hostUploadPath('yousef'))->toBe('storage/pinroll/tokens/yousef.php');
 });
+
+it('resolves default label from configured gate.label', function () {
+    expect(GateTokenRegistry::labelFromHost(['gate' => ['label' => 'Ali.Dev']]))->toBe('ali.dev');
+});

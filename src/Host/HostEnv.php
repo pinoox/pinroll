@@ -71,7 +71,8 @@ final class HostEnv
         $url = self::read($name, 'URL');
         $token = self::read($name, 'TOKEN');
         $site = self::read($name, 'SITE');
-        if ($url !== null || $token !== null || $site !== null) {
+        $label = self::read($name, 'LABEL');
+        if ($url !== null || $token !== null || $site !== null || $label !== null) {
             $gate = is_array($host['gate'] ?? null) ? $host['gate'] : [];
             if ($site !== null) {
                 $gate['site'] = $site;
@@ -84,6 +85,9 @@ final class HostEnv
             }
             if ($token !== null) {
                 $gate['token'] = $token;
+            }
+            if ($label !== null) {
+                $gate['label'] = $label;
             }
             $host['gate'] = $gate;
         }

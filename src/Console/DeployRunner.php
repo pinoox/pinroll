@@ -448,7 +448,15 @@ final class DeployRunner
         }
 
         $site = GateUrl::siteFrom($resolvedUrl);
-        $persistPath = OverlayWriter::persistGate($this->projectRoot ?? Pinroll::paths()->root(), $targetName, $site, $token);
+        $label = \Pinoox\Pinroll\PinGate\GateTokenRegistry::labelFromHost($raw);
+        $persistPath = OverlayWriter::persistGate(
+            $this->projectRoot ?? Pinroll::paths()->root(),
+            $targetName,
+            $site,
+            $token,
+            null,
+            $label,
+        );
 
         $uploaded = false;
         $uploadInfo = null;
@@ -480,6 +488,15 @@ final class DeployRunner
             );
         }
 
+        $tokenSync = GateTokenSyncer::sync(
+            $this->projectRoot ?? Pinroll::paths()->root(),
+            $targetName,
+            $target,
+            $raw,
+            $token,
+            $label,
+        );
+
         return [
             'bootstrap' => $export['index'],
             'gate_dir' => ($uploaded || $zip) ? null : $export['gate_dir'],
@@ -499,6 +516,9 @@ final class DeployRunner
             'uploaded' => $uploaded,
             'upload' => $uploadInfo,
             'embed_token' => $embed,
+            'token_label' => $tokenSync['label'],
+            'token_file' => $tokenSync['remote'],
+            'token_uploaded' => $tokenSync['uploaded'],
         ];
     }
 

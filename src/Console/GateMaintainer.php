@@ -6,12 +6,13 @@ use Pinoox\Pinroll\Exception\PinrollException;
 use Pinoox\Pinroll\Support\HostDir;
 use Pinoox\Pinroll\Support\PushProgress;
 use Pinoox\Pinroll\Host\HostGate;
+use Pinoox\Pinroll\Pinroll;
 use Pinoox\Pinroll\Target\PinGateClient;
 use Pinoox\Pinroll\Target\PinGateProbe;
 use Pinoox\Pinroll\Target\PinGateTransport;
 
 /**
- * Probe PinGate health and upload a fresh pingate.php when needed.
+ * Probe PinGate health and upload a fresh pingate.php + token file when needed.
  */
 final class GateMaintainer
 {
@@ -50,27 +51,41 @@ final class GateMaintainer
         array $rawTarget,
         ?DeployRunner $runner = null,
     ): void {
-        $probe = self::probe($gateUrl, $token, $rawTarget, $hostName);
-        if ($probe['ok']) {
-            return;
-        }
-
-        if (!($probe['repairable'] ?? false) || !GateDeployer::canUpload($resolvedTarget)) {
-            throw new PinrollException(self::formatFailure($probe));
-        }
-
-        PushProgress::arrow('PinGate needs update — uploading pingate.php…');
-        $runner ??= new DeployRunner();
-        $runner->initGate($hostName, false, HostDir::fromTarget($rawTarget), $gateUrl, false, true);
-
-        // Host PHP may need a moment to pick up the replaced file.
-        usleep(500_000);
+        $root = Pinroll::paths()->root();
+        $canGate = GateDeployer::canUpload($resolvedTarget);
+        $canToken = GateTokenSyncer::canUpload($resolvedTarget, $rawTarget);
 
         $probe = self::probe($gateUrl, $token, $rawTarget, $hostName);
         if ($probe['ok']) {
-            PushProgress::detail('PinGate ready');
+            if ($canToken) {
+                GateTokenSyncer::sync($root, $hostName, $resolvedTarget, $rawTarget, $token);
+            }
 
             return;
+        }
+
+        $authFail = self::isAuthFailure((string) ($probe['message'] ?? ''));
+        $repairable = (bool) ($probe['repairable'] ?? false);
+
+        if (($authFail || $repairable) && ($canGate || $canToken)) {
+            $runner ??= new DeployRunner($root);
+
+            if ($canGate && ($authFail || $repairable)) {
+                PushProgress::arrow('PinGate needs update — uploading pingate.php + token…');
+                $runner->initGate($hostName, false, HostDir::fromTarget($rawTarget), $gateUrl, false, true);
+            } elseif ($canToken) {
+                PushProgress::arrow('Uploading host token file…');
+                GateTokenSyncer::sync($root, $hostName, $resolvedTarget, $rawTarget, $token);
+            }
+
+            usleep(500_000);
+
+            $probe = self::probe($gateUrl, $token, $rawTarget, $hostName);
+            if ($probe['ok']) {
+                PushProgress::detail('PinGate ready');
+
+                return;
+            }
         }
 
         throw new PinrollException(self::formatFailure($probe));
@@ -86,7 +101,10 @@ final class GateMaintainer
             return [
                 'ok' => false,
                 'message' => 'PinGate is reachable without authentication — re-upload pingate.php to enforce bearer token.',
-                'repairable' => GateDeployer::canUpload($rawTarget),
+                'repairable' => GateDeployer::canUpload($rawTarget) || GateTokenSyncer::canUpload(
+                    array_merge($rawTarget, ['transport' => (string) ($rawTarget['via'] ?? 'ftp')]),
+                    $rawTarget,
+                ),
             ];
         }
 
@@ -187,7 +205,18 @@ final class GateMaintainer
             || str_contains($message, '503')
             || str_contains($lower, 'missing bearer')
             || str_contains($lower, 'invalid token')
+            || str_contains($lower, 'no pingate tokens')
             || str_contains($lower, 'without authentication');
+    }
+
+    private static function isAuthFailure(string $message): bool
+    {
+        $lower = strtolower($message);
+
+        return str_contains($lower, 'invalid token')
+            || str_contains($lower, 'missing bearer')
+            || str_contains($lower, 'no pingate tokens')
+            || str_contains($lower, 'unauthorized');
     }
 
     /**

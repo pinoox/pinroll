@@ -257,9 +257,9 @@ final class PinGateClient
             $error = (string) ($decoded['error'] ?? 'PinGate error');
             if (str_contains(strtolower($error), 'invalid token') || str_contains(strtolower($error), 'unauthorized')) {
                 $error .= "\n"
-            . 'Token in .env does not match pingate.php on the host.' . "\n"
-            . 'Fix: php pinoox pinroll:gate {target}  (reuses .env token, FTP upload)' . "\n"
-                    . 'Or rotate: php pinoox pinroll:gate {target} --rotate';
+                    . 'Host auth uses storage/pinroll/tokens/{label}.php (hash files).' . "\n"
+                    . 'Fix: php pinoox pinroll:token {label} --push' . "\n"
+                    . 'Or with FTP deploy: Ensure PinGate uploads pingate.php + your token file automatically.';
             }
             $decoded['error'] = $error;
         }

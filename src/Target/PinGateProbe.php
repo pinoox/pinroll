@@ -74,7 +74,7 @@ final class PinGateProbe
                 return [
                     'ok' => false,
                     'deployed' => true,
-                    'message' => 'Token invalid — sync .env with pingate.php on host.',
+                    'message' => 'Token invalid — upload storage/pinroll/tokens/{label}.php (php pinoox pinroll:token {label} --push).',
                 ];
             }
 
@@ -99,7 +99,7 @@ final class PinGateProbe
             return [
                 'ok' => false,
                 'deployed' => true,
-                'message' => 'Token invalid — sync .env with pingate.php on host.',
+                'message' => 'Token invalid — upload storage/pinroll/tokens/{label}.php (php pinoox pinroll:token {label} --push).',
             ];
         }
 

@@ -84,8 +84,14 @@ final class OverlayWriter
      *
      * @return string Path written (overlay or .env)
      */
-    public static function persistGate(string $projectRoot, string $hostName, string $site, string $token, ?string $ftpPassword = null): string
-    {
+    public static function persistGate(
+        string $projectRoot,
+        string $hostName,
+        string $site,
+        string $token,
+        ?string $ftpPassword = null,
+        ?string $label = null,
+    ): string {
         $paths = new NativePathResolver($projectRoot);
         $preferred = ProjectPaths::preferredConfigFile($paths);
         $legacy = ProjectPaths::legacyConfigFile($paths);
@@ -97,12 +103,14 @@ final class OverlayWriter
         $envHasGate = self::envHasAny($envPath, [$keys['url'], $keys['token']]);
 
         if ($hasOverlay || !$envHasGate) {
-            $patch = [
-                'gate' => [
-                    'site' => GateUrl::siteFrom($site),
-                    'token' => $token,
-                ],
+            $gate = [
+                'site' => GateUrl::siteFrom($site),
+                'token' => $token,
             ];
+            if ($label !== null && $label !== '') {
+                $gate['label'] = $label;
+            }
+            $patch = ['gate' => $gate];
             if ($ftpPassword !== null && $ftpPassword !== '') {
                 $patch['ftp'] = ['password' => $ftpPassword];
             }

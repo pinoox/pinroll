@@ -202,4 +202,41 @@ PHP;
     {
         return self::TOKENS_DIR . '/' . self::normalizeLabel($label) . '.php';
     }
+
+    /**
+     * @param array<string, mixed> $host Raw host config
+     */
+    public static function labelFromHost(array $host): string
+    {
+        $configured = trim((string) ($host['gate']['label'] ?? ''));
+        if ($configured !== '') {
+            try {
+                return self::normalizeLabel($configured);
+            } catch (\InvalidArgumentException) {
+            }
+        }
+
+        return self::defaultLabel();
+    }
+
+    public static function defaultLabel(): string
+    {
+        foreach ([
+            getenv('PINROLL_TOKEN_LABEL'),
+            getenv('USERNAME'),
+            getenv('USER'),
+            function_exists('get_current_user') ? get_current_user() : '',
+        ] as $candidate) {
+            if (!is_string($candidate) || trim($candidate) === '') {
+                continue;
+            }
+
+            try {
+                return self::normalizeLabel($candidate);
+            } catch (\InvalidArgumentException) {
+            }
+        }
+
+        return 'dev';
+    }
 }

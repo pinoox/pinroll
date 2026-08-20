@@ -142,11 +142,13 @@ final class PinrollCli
 
         if (!$embedToken) {
             $io->section('Host auth (multi-developer)');
+            $tokenFile = (string) ($data['token_file'] ?? 'storage/pinroll/tokens/{label}.php');
+            $tokenUploaded = (bool) ($data['token_uploaded'] ?? false);
             $io->writeln([
                 '  <fg=gray>pingate.php has</> <comment>no embedded token</comment> <fg=gray>(safe to redeploy).</>',
-                '  Each developer uploads their own file:',
-                '  <comment>storage/pinroll/tokens/{label}.php</comment>',
-                '  Mint: <comment>php pinoox pinroll:token {label}</comment>',
+                '  Host file: <comment>' . self::escape($tokenFile) . '</comment>'
+                    . ($tokenUploaded ? ' <fg=green>(uploaded)</>' : ''),
+                '  Mint/push: <comment>php pinoox pinroll:token {label} --push</comment>',
             ]);
         } else {
             $io->section('Host auth (legacy embed)');

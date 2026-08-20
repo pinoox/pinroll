@@ -3,6 +3,7 @@
 namespace Pinoox\Terminal\Pinroll;
 
 use Pinoox\Component\Terminal;
+use Pinoox\Pinroll\Console\GateTokenSyncer;
 use Pinoox\Pinroll\Console\GateUrl;
 use Pinoox\Pinroll\Console\OverlayWriter;
 use Pinoox\Pinroll\Console\PinrollInput;
@@ -21,7 +22,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
     name: 'pinroll:token',
-    description: 'Mint a deploy token and write storage/pinroll/tokens/{label}.php for host upload',
+    description: 'Mint a deploy token and write storage/pinroll/tokens/{label}.php (optional FTP/SSH push)',
     aliases: ['pinroll:gate:token'],
 )]
 class PinrollTokenCommand extends Terminal
@@ -29,11 +30,13 @@ class PinrollTokenCommand extends Terminal
     protected function configure(): void
     {
         $this
-            ->addArgument('label', InputArgument::REQUIRED, 'Developer label (e.g. yousef, ali)')
+            ->addArgument('label', InputArgument::OPTIONAL, 'Developer label (default: OS username / gate.label)')
             ->addArgument('host', InputArgument::OPTIONAL, 'Host name (omit when default_host is set)')
             ->addOption('host', null, InputOption::VALUE_REQUIRED, 'Host override')
+            ->addOption('label', null, InputOption::VALUE_REQUIRED, 'Developer label override')
             ->addOption('rotate', null, InputOption::VALUE_NONE, 'Always mint a new token (default: reuse gate.token from config)')
-            ->addOption('deploy', null, InputOption::VALUE_NONE, 'Deprecated: use pinroll:gate for pingate.php upload');
+            ->addOption('push', null, InputOption::VALUE_NONE, 'Upload token file via FTP/SSH when credentials are configured')
+            ->addOption('deploy', null, InputOption::VALUE_NONE, 'Deprecated: use --push');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -41,19 +44,20 @@ class PinrollTokenCommand extends Terminal
         parent::execute($input, $output);
         $io = new SymfonyStyle($input, $output);
 
-        if ((bool) $input->getOption('deploy')) {
-            $io->warning('Use pinroll:gate for pingate.php upload. pinroll:token only creates storage/pinroll/tokens/{label}.php.');
-        }
-
         try {
             $root = defined('PINOOX_BASE_PATH') ? PINOOX_BASE_PATH : getcwd();
-            $label = (string) $input->getArgument('label');
             $hostName = PinrollInput::hostName($input);
             $rotate = (bool) $input->getOption('rotate');
+            $push = (bool) $input->getOption('push') || (bool) $input->getOption('deploy');
 
             Pinroll::boot(new NativePathResolver((string) $root));
             $raw = Pinroll::hosts()->raw($hostName);
+            $resolved = Pinroll::hosts()->resolve($hostName);
             $gate = HostGate::credentials($raw);
+
+            $labelOpt = (string) ($input->getOption('label') ?: '');
+            $labelArg = (string) ($input->getArgument('label') ?? '');
+            $label = $labelOpt !== '' ? $labelOpt : ($labelArg !== '' ? $labelArg : GateTokenRegistry::labelFromHost($raw));
 
             $token = (!$rotate && $gate['token'] !== '') ? $gate['token'] : TokenGenerator::token();
             $tokenReused = !$rotate && $gate['token'] !== '' && $token === $gate['token'];
@@ -63,18 +67,27 @@ class PinrollTokenCommand extends Terminal
                 $site = 'https://example.com';
             }
 
-            OverlayWriter::persistGate((string) $root, $hostName, $site, $token);
+            if ($push && GateTokenSyncer::canUpload($resolved, $raw)) {
+                $sync = GateTokenSyncer::sync((string) $root, $hostName, $resolved, $raw, $token, $label);
+            } else {
+                OverlayWriter::persistGate((string) $root, $hostName, $site, $token, null, $label);
+                $path = GateTokenRegistry::writeTokenFile((string) $root, $label, $token);
+                $sync = [
+                    'label' => $label,
+                    'local' => $path,
+                    'remote' => GateTokenRegistry::hostUploadPath($label),
+                    'uploaded' => false,
+                ];
+            }
 
-            $tokenPath = GateTokenRegistry::writeTokenFile((string) $root, $label, $token);
-            $hostPath = GateTokenRegistry::hostUploadPath($label);
-            $relToken = self::relPath((string) $root, $tokenPath);
+            $relToken = self::relPath((string) $root, $sync['local']);
 
             $io->newLine();
-            $io->block('Token ready', 'OK', 'fg=black;bg=green', ' ', true);
+            $io->block($sync['uploaded'] ? 'Token uploaded' : 'Token ready', 'OK', 'fg=black;bg=green', ' ', true);
 
             $io->section('Local config');
             $io->writeln([
-                '  <fg=gray>Plain token saved to</> <comment>.pinoox/pinroll.config.php</comment> <fg=gray>(gate.token)</>',
+                '  <fg=gray>Plain token saved to</> <comment>.pinoox/pinroll.config.php</comment> <fg=gray>(gate.token + gate.label)</>',
                 $tokenReused
                     ? '  <fg=gray>Reused existing gate.token — pass</> <comment>--rotate</comment> <fg=gray>to mint a new one.</>'
                     : '  <fg=gray>New token minted for host</> <comment>' . $hostName . '</comment>',
@@ -83,11 +96,13 @@ class PinrollTokenCommand extends Terminal
             $io->section('Your token (local only — do not upload)');
             $io->writeln('  <info>' . $token . '</info>');
 
-            $io->section('Host file (upload this)');
+            $io->section('Host file');
             $io->writeln([
                 '  <fg=gray>Local</>   <comment>' . $relToken . '</comment>',
-                '  <fg=gray>Host</>   <comment>' . $hostPath . '</comment>',
-                '  <fg=gray>Upload via cPanel / SFTP — pingate.php does not need redeploy.</>',
+                '  <fg=gray>Host</>   <comment>' . $sync['remote'] . '</comment>',
+                $sync['uploaded']
+                    ? '  <fg=green>Uploaded via FTP/SSH</>'
+                    : '  <fg=gray>Upload:</> <comment>php pinoox pinroll:token ' . $label . ' --push</comment>',
             ]);
 
             if ($gate['url'] !== '') {
@@ -97,7 +112,7 @@ class PinrollTokenCommand extends Terminal
 
             $io->newLine();
             $io->writeln('  <fg=gray>Check:</> <comment>php pinoox pinroll:check --via=pinion</comment>');
-            $io->writeln('  <fg=gray>Deploy:</> <comment>php pinoox pinroll:deploy --via=pinion</comment>');
+            $io->writeln('  <fg=gray>Deploy:</> <comment>php pinoox pinroll:deploy</comment>');
 
             return Command::SUCCESS;
         } catch (\Throwable $e) {
