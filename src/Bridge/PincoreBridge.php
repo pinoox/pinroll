@@ -37,12 +37,8 @@ final class PincoreBridge
         }
 
         try {
-            $isPinx = class_exists(\Pinoox\Component\Package\Pinx\PlatformArchive::class)
-                && \Pinoox\Component\Package\Pinx\PlatformArchive::isPinxPackageArchive($archivePath);
-
-            $isPlatform = !$isPinx
-                && class_exists(\Pinoox\Component\Package\Pinx\PlatformArchive::class)
-                && \Pinoox\Component\Package\Pinx\PlatformArchive::isPlatformArchive($archivePath);
+            $isPinx = PinxPackageDetect::isPinxPackage($archivePath);
+            $isPlatform = !$isPinx && PinxPackageDetect::isPlatformArchive($archivePath);
 
             if ($isPlatform) {
                 $updater = \Pinoox\Portal\Pinx::platformUpdater()->onStep(

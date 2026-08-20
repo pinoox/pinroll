@@ -1356,18 +1356,31 @@ function pinroll_pincore_is_pinx_package(string $archive): bool
         return false;
     }
 
-    if (class_exists(\Pinoox\Component\Package\Pinx\PlatformArchive::class)) {
+    if (class_exists(\Pinoox\Pinroll\Bridge\PinxPackageDetect::class)) {
+        return \Pinoox\Pinroll\Bridge\PinxPackageDetect::isPinxPackage($archive);
+    }
+
+    if (
+        class_exists(\Pinoox\Component\Package\Pinx\PlatformArchive::class)
+        && method_exists(\Pinoox\Component\Package\Pinx\PlatformArchive::class, 'isPinxPackageArchive')
+    ) {
         return \Pinoox\Component\Package\Pinx\PlatformArchive::isPinxPackageArchive($archive);
     }
 
+    return pinroll_pincore_detect_pinx_from_zip($archive);
+}
+
+function pinroll_pincore_detect_pinx_from_zip(string $archive): bool
+{
+    $lower = strtolower($archive);
+
     if (!class_exists(ZipArchive::class)) {
-        return str_ends_with(strtolower($archive), '.pinx')
-            || str_ends_with(strtolower($archive), '.pin');
+        return str_ends_with($lower, '.pinx') || str_ends_with($lower, '.pin');
     }
 
     $zip = new ZipArchive();
     if ($zip->open($archive) !== true) {
-        return false;
+        return str_ends_with($lower, '.pinx') || str_ends_with($lower, '.pin');
     }
 
     try {
@@ -1386,8 +1399,7 @@ function pinroll_pincore_is_pinx_package(string $archive): bool
             }
         }
 
-        return str_ends_with(strtolower($archive), '.pinx')
-            || str_ends_with(strtolower($archive), '.pin');
+        return str_ends_with($lower, '.pinx') || str_ends_with($lower, '.pin');
     } finally {
         $zip->close();
     }
