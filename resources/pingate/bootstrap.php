@@ -2325,7 +2325,7 @@ function pinroll_finish_install(string $root): array
         $php = "<?php\n\nreturn " . var_export($routes, true) . ";\n";
         foreach ([
             $root . '/platform/app-router.config.php',
-            $root . '/pinker/platform/app-router.config.php',
+            $root . '/pinker/bake/platform/app-router.config.php',
         ] as $file) {
             $dir = dirname($file);
             if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {

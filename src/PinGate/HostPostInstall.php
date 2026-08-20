@@ -90,7 +90,7 @@ final class HostPostInstall
         $written = false;
         foreach ([
             $root . '/platform/app-router.config.php',
-            $root . '/pinker/platform/app-router.config.php',
+            $root . '/pinker/bake/platform/app-router.config.php',
         ] as $file) {
             $dir = dirname($file);
             if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
@@ -121,9 +121,10 @@ final class HostPostInstall
 
         $ok = false;
         foreach ([
-            $root . '/pinker/apps/' . self::INSTALLER . '/app.php',
+            $root . '/pinker/bake/apps/' . self::INSTALLER . '/app.php',
             $root . '/apps/' . self::INSTALLER . '/pinker/app.php',
             $root . '/pinker/state/apps/' . self::INSTALLER . '/app.php',
+            $root . '/pinker/stable/apps/' . self::INSTALLER . '/app.php',
         ] as $file) {
             if (self::writeEnableFalse($file, is_file($file))) {
                 $ok = true;
