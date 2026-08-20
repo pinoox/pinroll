@@ -42,8 +42,10 @@ test('full url is not mixed with hostDir', function () {
 });
 
 test('gate url route appends to query style base', function () {
-    expect(GateUrl::route('https://pinoox.com/pingate.php?route=', 'install'))
-        ->toBe('https://pinoox.com/pingate.php?route=install');
+    expect(GateUrl::route('https://pinoox.com/pingate.php?route=', 'push/init'))
+        ->toBe('https://pinoox.com/pingate.php?route=push/init');
+    expect(GateUrl::route('https://pinoox.com/pingate.php?route=', '/push/init'))
+        ->toBe('https://pinoox.com/pingate.php?route=push/init');
     expect(GateUrl::route('https://pinoox.com/pingate.php?route=', 'status'))
         ->toBe('https://pinoox.com/pingate.php?route=status');
     expect(GateUrl::route('https://example.com/gate', 'install'))

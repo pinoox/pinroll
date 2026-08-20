@@ -71,6 +71,12 @@ function pinroll_pingate_run(string $root, array $gateConfig = []): void
         return;
     }
 
+    if ($method === 'POST' && str_starts_with($path, 'push/')) {
+        pinroll_handle_direct_push($root, $gateConfig, $path);
+
+        return;
+    }
+
     try {
         $root = pinroll_resolve_platform_root($root, $gateConfig);
     } catch (Throwable $e) {
@@ -1085,6 +1091,46 @@ function pinroll_handle_direct_cleanup(string $root, array $gateConfig, array $i
     echo json_encode(['success' => true, 'data' => $result], JSON_UNESCAPED_UNICODE);
 }
 
+function pinroll_handle_direct_push(string $root, array $gateConfig, string $path): void
+{
+    try {
+        $root = pinroll_resolve_platform_root($root, $gateConfig);
+    } catch (Throwable $e) {
+        pinroll_gate_json_error(503, $e->getMessage());
+
+        return;
+    }
+
+    $input = json_decode((string) file_get_contents('php://input'), true);
+    if (!is_array($input) || $input === []) {
+        $input = $_POST;
+    }
+    if (!is_array($input)) {
+        $input = [];
+    }
+    if (isset($_FILES['chunk']['tmp_name']) && is_string($_FILES['chunk']['tmp_name'])) {
+        $input['chunk'] = $_FILES['chunk']['tmp_name'];
+    }
+
+    pinroll_load_platform_autoload($root);
+
+    try {
+        $incoming = pinroll_incoming_dir($root);
+        $result = pinroll_pincore_push($root, $incoming, $path, $input);
+        if (($result['success'] ?? true) === false) {
+            $error = $result['error'] ?? 'Pinion error';
+            $message = is_array($error) ? (string) ($error['message'] ?? json_encode($error)) : (string) $error;
+            pinroll_gate_json_error((int) ($result['status'] ?? 400), $message);
+
+            return;
+        }
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'data' => $result], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $e) {
+        pinroll_gate_json_error((int) ($e->getCode() ?: 500), $e->getMessage());
+    }
+}
+
 /**
  * Host handler when pinoox/pinroll is not installed (require-dev). Uses pincore Pinx + Pinion.
  *
@@ -1108,13 +1154,10 @@ function pinroll_pincore_gate_handle(
         throw new RuntimeException('Pinion is not available on the host. Restore vendor/ first (POST ?route=vendor).');
     }
 
-    \Pinoox\Pinion\Pinion::configure([
-        'storage_path' => $root . '/storage/pinion',
-    ]);
-    $pinion = \Pinoox\Pinion\Pinion::http(['destination' => $incoming]);
+    $pinion = pinroll_pinion_http($root);
 
     return match (true) {
-        $method === 'POST' && $path === 'push/init' => $pinion->init(array_merge($input, ['destination' => $incoming])),
+        $method === 'POST' && $path === 'push/init' => $pinion->init($input),
         $method === 'POST' && $path === 'push/upload' => $pinion->upload($input, $input['chunk'] ?? null),
         $method === 'POST' && $path === 'push/complete' => $pinion->complete($input),
         $method === 'POST' && ($path === 'install' || $path === 'apply') => pinroll_pincore_install($root, $incoming, $input),
@@ -1125,6 +1168,40 @@ function pinroll_pincore_gate_handle(
         $method === 'GET' && $path === 'history' => ['history' => []],
         $method === 'POST' && $path === 'setup' => pinroll_pincore_setup($root, $input),
         $method === 'POST' && $path === 'check-db' => pinroll_pincore_check_db($root, $input),
+        default => throw new RuntimeException('Unknown PinGate route: ' . $path),
+    };
+}
+
+/**
+ * @param array<string, mixed> $input
+ * @return array<string, mixed>
+ */
+function pinroll_pinion_http(string $root): \Pinoox\Pinion\HttpHandler
+{
+    if (!class_exists(\Pinoox\Pinion\Pinion::class)) {
+        throw new RuntimeException('Pinion is not available on the host. Restore vendor/ first (POST ?route=vendor).');
+    }
+
+    $root = rtrim(str_replace('\\', '/', $root), '/');
+
+    \Pinoox\Pinion\Pinion::configure(
+        ['storage_path' => $root . '/storage/pinion'],
+        new \Pinoox\Pinion\Support\NativePathResolver($root),
+    );
+
+    return \Pinoox\Pinion\Pinion::http(['destination' => 'storage/pinroll/incoming']);
+}
+
+function pinroll_pincore_push(string $root, string $incoming, string $path, array $input): array
+{
+    unset($incoming);
+    $pinion = pinroll_pinion_http($root);
+    $path = trim($path, '/');
+
+    return match ($path) {
+        'push/init' => $pinion->init($input),
+        'push/upload' => $pinion->upload($input, $input['chunk'] ?? null),
+        'push/complete' => $pinion->complete($input),
         default => throw new RuntimeException('Unknown PinGate route: ' . $path),
     };
 }
