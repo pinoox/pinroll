@@ -63,3 +63,32 @@ test('provision payload validation rejects short names and missing db', function
 
     expect($errors)->not->toBeEmpty();
 });
+
+test('app pinx archive is not treated as platform zip', function () {
+    if (!class_exists(ZipArchive::class)) {
+        test()->markTestSkipped('ZipArchive extension not available');
+    }
+
+    $tmp = sys_get_temp_dir() . '/pinroll-pinx-' . bin2hex(random_bytes(4));
+    mkdir($tmp, 0755, true);
+    $archive = $tmp . '/com_pinoox_manager.pinx';
+
+    $zip = new ZipArchive();
+    expect($zip->open($archive, ZipArchive::CREATE))->toBeTrue();
+    $zip->addFromString('manifest.json', json_encode([
+        'format' => 'pinx',
+        'type' => 'app',
+        'package' => 'com_pinoox_manager',
+    ], JSON_THROW_ON_ERROR));
+    $zip->addFromString('payload/app.php', "<?php return ['package' => 'com_pinoox_manager'];");
+    $zip->close();
+
+    expect(pinroll_pincore_is_pinx_package($archive))->toBeTrue();
+
+    if (class_exists(\Pinoox\Component\Package\Pinx\PlatformArchive::class)) {
+        expect(\Pinoox\Component\Package\Pinx\PlatformArchive::isPlatformArchive($archive))->toBeFalse();
+    }
+
+    @unlink($archive);
+    @rmdir($tmp);
+});

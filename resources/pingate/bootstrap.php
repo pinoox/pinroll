@@ -1291,7 +1291,7 @@ function pinroll_pincore_install(string $root, string $incoming, array $input): 
     }
 
     $force = !empty($input['force']);
-    $ok = pinroll_pincore_apply_archive($installable, $force);
+    $ok = pinroll_pincore_apply_archive($root, $installable, $force);
     pinroll_remove_directory($workDir);
 
     if (!$ok) {
@@ -1303,8 +1303,25 @@ function pinroll_pincore_install(string $root, string $incoming, array $input): 
     return ['deploy_id' => $resolvedId, 'status' => 'applied'];
 }
 
-function pinroll_pincore_apply_archive(string $archive, bool $force): bool
+function pinroll_pincore_apply_archive(string $root, string $archive, bool $force): bool
 {
+    pinroll_boot_platform_for_setup($root);
+
+    if (pinroll_pincore_is_pinx_package($archive)) {
+        if (!class_exists(\Pinoox\Portal\Pinx::class)) {
+            throw new RuntimeException('Pincore Pinx is not available on the host.');
+        }
+
+        $result = \Pinoox\Portal\Pinx::installer()->install($archive, ['force' => $force]);
+
+        if (!($result->success ?? false)) {
+            $message = trim((string) ($result->message ?? $result->error ?? ''));
+            throw new RuntimeException($message !== '' ? $message : 'Package install failed.');
+        }
+
+        return true;
+    }
+
     $isPlatform = class_exists(\Pinoox\Component\Package\Pinx\PlatformArchive::class)
         && \Pinoox\Component\Package\Pinx\PlatformArchive::isPlatformArchive($archive);
 
@@ -1331,6 +1348,49 @@ function pinroll_pincore_apply_archive(string $archive, bool $force): bool
     }
 
     return true;
+}
+
+function pinroll_pincore_is_pinx_package(string $archive): bool
+{
+    if (!is_file($archive)) {
+        return false;
+    }
+
+    if (class_exists(\Pinoox\Component\Package\Pinx\PlatformArchive::class)) {
+        return \Pinoox\Component\Package\Pinx\PlatformArchive::isPinxPackageArchive($archive);
+    }
+
+    if (!class_exists(ZipArchive::class)) {
+        return str_ends_with(strtolower($archive), '.pinx')
+            || str_ends_with(strtolower($archive), '.pin');
+    }
+
+    $zip = new ZipArchive();
+    if ($zip->open($archive) !== true) {
+        return false;
+    }
+
+    try {
+        $raw = $zip->getFromName('manifest.json');
+        if (is_string($raw) && $raw !== '') {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded) && ($decoded['format'] ?? null) === 'pinx') {
+                return true;
+            }
+        }
+
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            if (is_string($name) && str_starts_with(ltrim(str_replace('\\', '/', $name), '/'), 'payload/')) {
+                return true;
+            }
+        }
+
+        return str_ends_with(strtolower($archive), '.pinx')
+            || str_ends_with(strtolower($archive), '.pin');
+    } finally {
+        $zip->close();
+    }
 }
 
 function pinroll_pincore_resolve_archive(string $incoming, ?string $deployId): string
@@ -1737,6 +1797,10 @@ function pinroll_boot_platform_for_setup(string $root): void
 
     if (class_exists(\Pinoox\Portal\App\AppEngine::class)) {
         \Pinoox\Portal\App\AppEngine::__rebuild();
+    }
+
+    if (class_exists(\Pinoox\Portal\Pinx::class)) {
+        \Pinoox\Portal\Pinx::__rebuild();
     }
 }
 

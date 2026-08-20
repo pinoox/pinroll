@@ -37,7 +37,11 @@ final class PincoreBridge
         }
 
         try {
-            $isPlatform = class_exists(\Pinoox\Component\Package\Pinx\PlatformArchive::class)
+            $isPinx = class_exists(\Pinoox\Component\Package\Pinx\PlatformArchive::class)
+                && \Pinoox\Component\Package\Pinx\PlatformArchive::isPinxPackageArchive($archivePath);
+
+            $isPlatform = !$isPinx
+                && class_exists(\Pinoox\Component\Package\Pinx\PlatformArchive::class)
                 && \Pinoox\Component\Package\Pinx\PlatformArchive::isPlatformArchive($archivePath);
 
             if ($isPlatform) {
