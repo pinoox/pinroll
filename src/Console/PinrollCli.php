@@ -633,3 +633,4 @@ final class PinrollCli
 
         return $path;
     }
+}
