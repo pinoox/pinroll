@@ -1312,11 +1312,18 @@ function pinroll_pincore_apply_archive(string $root, string $archive, bool $forc
             throw new RuntimeException('Pincore Pinx is not available on the host.');
         }
 
-        $result = \Pinoox\Portal\Pinx::installer()->install($archive, ['force' => $force]);
+        $result = \Pinoox\Portal\Pinx::installer()->install(
+            $archive,
+            pinroll_pincore_install_options($force),
+        );
 
         if (!($result->success ?? false)) {
             $message = trim((string) ($result->message ?? $result->error ?? ''));
             throw new RuntimeException($message !== '' ? $message : 'Package install failed.');
+        }
+
+        if ($result->manifest->isApp()) {
+            pinroll_pincore_rebuild_cache($result->manifest->package());
         }
 
         return true;
@@ -1340,14 +1347,86 @@ function pinroll_pincore_apply_archive(string $root, string $archive, bool $forc
         throw new RuntimeException('Pincore Pinx is not available on the host.');
     }
 
-    $result = \Pinoox\Portal\Pinx::installer()->install($archive, ['force' => $force]);
+    $result = \Pinoox\Portal\Pinx::installer()->install(
+        $archive,
+        pinroll_pincore_install_options($force),
+    );
 
     if (!($result->success ?? false)) {
         $message = trim((string) ($result->message ?? $result->error ?? ''));
         throw new RuntimeException($message !== '' ? $message : 'Package install failed.');
     }
 
+    if ($result->manifest->isApp()) {
+        pinroll_pincore_rebuild_cache($result->manifest->package());
+    }
+
     return true;
+}
+
+/**
+ * @return array{force: bool, skip_cache: bool}
+ */
+function pinroll_pincore_install_options(bool $force): array
+{
+    pinroll_pincore_reset_route_state();
+
+    return [
+        'force' => $force,
+        // PinGate install runs in one PHP request; cache rebuild on older pincore
+        // can register the same action twice (hub.home / welcome.welcome).
+        'skip_cache' => true,
+    ];
+}
+
+function pinroll_pincore_reset_route_state(): void
+{
+    if (class_exists(\Pinoox\Component\Router\Action\ActionRegistry::class)) {
+        \Pinoox\Component\Router\Action\ActionRegistry::reset();
+    }
+
+    if (class_exists(\Pinoox\Component\AppEvent\AppRouteRegistry::class)) {
+        \Pinoox\Component\AppEvent\AppRouteRegistry::reset();
+    }
+
+    if (class_exists(\Pinoox\Portal\Router::class)) {
+        try {
+            \Pinoox\Portal\Router::__()->__portalRebuild();
+        } catch (Throwable) {
+        }
+    }
+}
+
+function pinroll_pincore_rebuild_cache(string $package): void
+{
+    $package = trim($package);
+    if ($package === '') {
+        return;
+    }
+
+    pinroll_pincore_reset_route_state();
+
+    if (class_exists(\Pinoox\Component\Cache\AppCacheManager::class)) {
+        try {
+            \Pinoox\Component\Cache\AppCacheManager::build($package, null, true);
+
+            return;
+        } catch (Throwable) {
+        }
+    }
+
+    if (!function_exists('exec')) {
+        return;
+    }
+
+    $root = defined('PINOOX_PATH_ROOT') ? (string) PINOOX_PATH_ROOT : getcwd();
+    $root = rtrim(str_replace('\\', '/', $root), '/');
+    $pinoox = is_file($root . '/pinoox') ? $root . '/pinoox' : 'pinoox';
+    $cmd = 'php ' . escapeshellarg($pinoox)
+        . ' cache:build ' . escapeshellarg($package)
+        . ' --force 2>&1';
+
+    @exec($cmd, $output, $code);
 }
 
 function pinroll_pincore_is_pinx_package(string $archive): bool
