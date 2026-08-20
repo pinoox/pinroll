@@ -98,13 +98,16 @@ test('blank-host put zip assembles platform.zip from chunks', function () {
     mkdir($tmp, 0755, true);
 
     $payload = str_repeat('Pinoox', 1024);
+    $mid = (int) floor(strlen($payload) / 2);
+    $hash = hash('sha256', $payload);
     $init = pinroll_put_zip_init($tmp, [
         'filename' => 'platform.zip',
         'size' => strlen($payload),
+        'chunk_size' => $mid,
+        'file_hash' => $hash,
     ]);
     expect($init['id'])->toStartWith('pbl_');
 
-    $mid = (int) floor(strlen($payload) / 2);
     pinroll_put_zip_chunk($tmp, [
         'upload_id' => $init['id'],
         'index' => 0,
@@ -118,7 +121,7 @@ test('blank-host put zip assembles platform.zip from chunks', function () {
 
     $done = pinroll_put_zip_complete($tmp, [
         'upload_id' => $init['id'],
-        'file_hash' => hash('sha256', $payload),
+        'file_hash' => $hash,
     ]);
 
     expect($done['filename'])->toBe('platform.zip')
@@ -126,6 +129,115 @@ test('blank-host put zip assembles platform.zip from chunks', function () {
         ->and((string) file_get_contents($tmp . '/platform.zip'))->toBe($payload);
 
     @unlink($tmp . '/platform.zip');
+    if (function_exists('pinroll_remove_directory')) {
+        pinroll_remove_directory($tmp . '/storage');
+    }
+    @rmdir($tmp);
+});
+
+test('put zip resume requires matching file hash', function () {
+    $tmp = sys_get_temp_dir() . '/pinroll-put-resume-' . bin2hex(random_bytes(4));
+    mkdir($tmp, 0755, true);
+
+    $old = str_repeat('A', 2048);
+    $new = str_repeat('B', 2048);
+    $chunkSize = 1024;
+
+    $first = pinroll_put_zip_init($tmp, [
+        'filename' => 'platform.zip',
+        'size' => strlen($old),
+        'chunk_size' => $chunkSize,
+        'file_hash' => hash('sha256', $old),
+    ]);
+    pinroll_put_zip_chunk($tmp, [
+        'upload_id' => $first['id'],
+        'index' => 0,
+        'chunk' => substr($old, 0, $chunkSize),
+    ]);
+
+    $mismatch = pinroll_put_zip_init($tmp, [
+        'filename' => 'platform.zip',
+        'size' => strlen($new),
+        'chunk_size' => $chunkSize,
+        'file_hash' => hash('sha256', $new),
+    ]);
+    expect($mismatch['id'])->not->toBe($first['id'])
+        ->and($mismatch['resumed'] ?? false)->toBeFalse()
+        ->and(is_file(pinroll_put_zip_dir($tmp) . '/' . $first['id'] . '.part'))->toBeFalse();
+
+    pinroll_put_zip_chunk($tmp, [
+        'upload_id' => $mismatch['id'],
+        'index' => 0,
+        'chunk' => substr($new, 0, $chunkSize),
+    ]);
+    $same = pinroll_put_zip_init($tmp, [
+        'filename' => 'platform.zip',
+        'size' => strlen($new),
+        'chunk_size' => $chunkSize,
+        'file_hash' => hash('sha256', $new),
+    ]);
+    expect($same['id'])->toBe($mismatch['id'])
+        ->and($same['resumed'])->toBeTrue()
+        ->and($same['received'])->toBe($chunkSize);
+
+    pinroll_put_zip_chunk($tmp, [
+        'upload_id' => $same['id'],
+        'index' => 1,
+        'chunk' => substr($new, $chunkSize),
+    ]);
+    pinroll_put_zip_complete($tmp, [
+        'upload_id' => $same['id'],
+        'file_hash' => hash('sha256', $new),
+    ]);
+
+    expect((string) file_get_contents($tmp . '/platform.zip'))->toBe($new);
+
+    @unlink($tmp . '/platform.zip');
+    if (function_exists('pinroll_remove_directory')) {
+        pinroll_remove_directory($tmp . '/storage');
+    }
+    @rmdir($tmp);
+});
+
+test('put zip chunk retry is idempotent and checksum mismatch discards leftover', function () {
+    $tmp = sys_get_temp_dir() . '/pinroll-put-retry-' . bin2hex(random_bytes(4));
+    mkdir($tmp, 0755, true);
+
+    $payload = str_repeat('C', 2048);
+    $chunkSize = 1024;
+    $init = pinroll_put_zip_init($tmp, [
+        'filename' => 'platform.zip',
+        'size' => strlen($payload),
+        'chunk_size' => $chunkSize,
+        'file_hash' => hash('sha256', $payload),
+    ]);
+
+    pinroll_put_zip_chunk($tmp, [
+        'upload_id' => $init['id'],
+        'index' => 0,
+        'chunk' => substr($payload, 0, $chunkSize),
+    ]);
+    pinroll_put_zip_chunk($tmp, [
+        'upload_id' => $init['id'],
+        'index' => 0,
+        'chunk' => substr($payload, 0, $chunkSize),
+    ]);
+    pinroll_put_zip_chunk($tmp, [
+        'upload_id' => $init['id'],
+        'index' => 1,
+        'chunk' => substr($payload, $chunkSize),
+    ]);
+
+    expect(filesize(pinroll_put_zip_dir($tmp) . '/' . $init['id'] . '.part'))->toBe(strlen($payload));
+
+    expect(fn () => pinroll_put_zip_complete($tmp, [
+        'upload_id' => $init['id'],
+        'file_hash' => hash('sha256', 'wrong'),
+    ]))->toThrow(RuntimeException::class, 'checksum');
+
+    expect(is_file(pinroll_put_zip_dir($tmp) . '/' . $init['id'] . '.part'))->toBeFalse()
+        ->and(is_file(pinroll_put_zip_dir($tmp) . '/' . $init['id'] . '.json'))->toBeFalse();
+
     if (function_exists('pinroll_remove_directory')) {
         pinroll_remove_directory($tmp . '/storage');
     }

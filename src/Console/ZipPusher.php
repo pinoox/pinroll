@@ -48,6 +48,8 @@ final class ZipPusher
         $remoteZip = $prefix . $remoteName;
 
         try {
+            // Small PinGate files still go over FTP; the zip uses HTTP chunks because
+            // shared-host FTP PASV data channels often stall on 20MB+ transfers.
             $this->uploadHttp($gateUrl, $token, $localZip, $remoteName);
         } catch (\Throwable $httpError) {
             $message = $httpError->getMessage();

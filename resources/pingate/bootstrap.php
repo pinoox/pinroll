@@ -845,6 +845,12 @@ function pinroll_put_zip_init(string $root, array $input): array
         throw new RuntimeException('Zip size is invalid or too large.', 400);
     }
 
+    $fileHash = strtolower(trim((string) ($input['file_hash'] ?? $input['fileHash'] ?? '')));
+    $chunkSize = (int) ($input['chunk_size'] ?? 256 * 1024);
+    if ($chunkSize < 1024 || $chunkSize > 5 * 1024 * 1024) {
+        $chunkSize = 256 * 1024;
+    }
+
     $dir = pinroll_put_zip_dir($root);
     if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
         throw new RuntimeException('Unable to create upload directory.', 500);
@@ -863,11 +869,37 @@ function pinroll_put_zip_init(string $root, array $input): array
         if ($id === '' || !is_file($part)) {
             continue;
         }
+        $existingHash = strtolower(trim((string) ($existing['file_hash'] ?? '')));
+        if ($fileHash === '' || $existingHash === '' || !hash_equals($fileHash, $existingHash)) {
+            pinroll_put_zip_discard($dir, $id);
+            continue;
+        }
         $received = (int) filesize($part);
         if ($received < 1 || $received >= $size) {
+            pinroll_put_zip_discard($dir, $id);
+            continue;
+        }
+        $resumeChunk = (int) ($existing['chunk_size'] ?? $chunkSize);
+        if ($resumeChunk >= 256) {
+            $aligned = (int) (intdiv($received, $resumeChunk) * $resumeChunk);
+            if ($aligned < $received) {
+                $handle = fopen($part, 'c+b');
+                if ($handle !== false) {
+                    flock($handle, LOCK_EX);
+                    ftruncate($handle, $aligned);
+                    flock($handle, LOCK_UN);
+                    fclose($handle);
+                }
+                $received = $aligned;
+            }
+        }
+        if ($received < 1) {
+            pinroll_put_zip_discard($dir, $id);
             continue;
         }
         $existing['received'] = $received;
+        $existing['chunk_size'] = $resumeChunk > 0 ? $resumeChunk : $chunkSize;
+        $existing['file_hash'] = $fileHash;
         file_put_contents($sessionFile, json_encode($existing, JSON_THROW_ON_ERROR));
 
         return [
@@ -886,12 +918,21 @@ function pinroll_put_zip_init(string $root, array $input): array
         'filename' => $filename,
         'size' => $size,
         'received' => 0,
+        'chunk_size' => $chunkSize,
+        'file_hash' => $fileHash,
     ];
     if (file_put_contents($dir . '/' . $id . '.json', json_encode($session, JSON_THROW_ON_ERROR)) === false) {
         throw new RuntimeException('Unable to create upload session.', 500);
     }
 
-    return ['id' => $id, 'upload_id' => $id, 'filename' => $filename, 'size' => $size];
+    return [
+        'id' => $id,
+        'upload_id' => $id,
+        'filename' => $filename,
+        'size' => $size,
+        'received' => 0,
+        'resumed' => false,
+    ];
 }
 
 /**
@@ -917,26 +958,56 @@ function pinroll_put_zip_chunk(string $root, array $input): array
         throw new RuntimeException('Empty chunk.', 400);
     }
 
+    $chunkSize = (int) ($session['chunk_size'] ?? 0);
+    if ($chunkSize < 256) {
+        $chunkSize = strlen($binary);
+    }
+
+    $offset = $index * $chunkSize;
+    $length = strlen($binary);
+    $end = $offset + $length;
+    if ($offset < 0 || $end > (int) $session['size']) {
+        throw new RuntimeException('Chunk ' . $index . ' is out of range.', 400);
+    }
+
     $part = pinroll_put_zip_dir($root) . '/' . $session['id'] . '.part';
-    $handle = fopen($part, 'cb');
+    $handle = fopen($part, 'c+b');
     if ($handle === false) {
         throw new RuntimeException('Unable to open part file.', 500);
     }
 
     try {
         flock($handle, LOCK_EX);
-        fseek($handle, 0, SEEK_END);
-        $written = fwrite($handle, $binary);
-        fflush($handle);
+        $stat = fstat($handle);
+        $have = is_array($stat) ? (int) ($stat['size'] ?? 0) : 0;
+        if ($have < $offset) {
+            throw new RuntimeException(
+                'Chunk ' . $index . ' arrived out of order (have ' . $have . ', need offset ' . $offset . ').',
+                400,
+            );
+        }
+
+        $written = $length;
+        if ($have < $end) {
+            if ($have > $offset && !ftruncate($handle, $offset)) {
+                throw new RuntimeException('Unable to rewind partial chunk ' . $index . '.', 500);
+            }
+            if (fseek($handle, $offset) !== 0) {
+                throw new RuntimeException('Unable to seek chunk ' . $index . '.', 500);
+            }
+            $written = fwrite($handle, $binary);
+            fflush($handle);
+        }
     } finally {
         flock($handle, LOCK_UN);
         fclose($handle);
     }
 
-    if ($written === false || $written !== strlen($binary)) {
+    if ($written === false || $written !== $length) {
         throw new RuntimeException('Failed to write chunk ' . $index . '.', 500);
     }
 
+    clearstatcache(true, $part);
     $session['received'] = (int) filesize($part);
     file_put_contents(
         pinroll_put_zip_dir($root) . '/' . $session['id'] . '.json',
@@ -961,6 +1032,7 @@ function pinroll_put_zip_complete(string $root, array $input): array
 
     $size = (int) filesize($part);
     if ($size !== (int) $session['size']) {
+        pinroll_put_zip_discard($dir, $session['id']);
         throw new RuntimeException('Upload size mismatch (got ' . $size . ', expected ' . $session['size'] . ').', 400);
     }
 
@@ -968,7 +1040,8 @@ function pinroll_put_zip_complete(string $root, array $input): array
     if ($fileHash !== '') {
         $actual = hash_file('sha256', $part);
         if (!is_string($actual) || !hash_equals(strtolower($fileHash), strtolower($actual))) {
-            throw new RuntimeException('Upload checksum mismatch.', 400);
+            pinroll_put_zip_discard($dir, $session['id']);
+            throw new RuntimeException('Upload checksum mismatch. Leftover upload was discarded; retry provision.', 400);
         }
     }
 
@@ -997,8 +1070,18 @@ function pinroll_put_zip_dir(string $root): string
     return rtrim($root, '/') . '/storage/pinroll/put';
 }
 
+function pinroll_put_zip_discard(string $dir, string $id): void
+{
+    if (!preg_match('/^pbl_[a-zA-Z0-9]{16,}$/', $id)) {
+        return;
+    }
+
+    @unlink(rtrim($dir, '/\\') . '/' . $id . '.part');
+    @unlink(rtrim($dir, '/\\') . '/' . $id . '.json');
+}
+
 /**
- * @return array{id: string, filename: string, size: int, received: int}
+ * @return array{id: string, filename: string, size: int, received: int, chunk_size: int, file_hash: string}
  */
 function pinroll_put_zip_load(string $root, string $id): array
 {
@@ -1026,6 +1109,8 @@ function pinroll_put_zip_load(string $root, string $id): array
         'filename' => $filename,
         'size' => (int) ($decoded['size'] ?? 0),
         'received' => (int) ($decoded['received'] ?? 0),
+        'chunk_size' => (int) ($decoded['chunk_size'] ?? 0),
+        'file_hash' => (string) ($decoded['file_hash'] ?? ''),
     ];
 }
 

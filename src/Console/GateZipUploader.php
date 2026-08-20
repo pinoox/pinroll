@@ -31,10 +31,16 @@ final class GateZipUploader
         $size = (int) filesize($localZip);
         PushProgress::arrow($remoteName . ' (' . $this->formatBytes($size) . ') via PinGate HTTP');
 
+        $fileHash = hash_file('sha256', $localZip);
+        if (!is_string($fileHash) || $fileHash === '') {
+            throw new PinrollException('Unable to hash zip: ' . $localZip);
+        }
+
         $init = $this->json('POST', GateUrl::route($gateUrl, 'put/init'), $token, [
             'filename' => $remoteName,
             'size' => $size,
             'chunk_size' => self::CHUNK_SIZE,
+            'file_hash' => $fileHash,
         ]);
 
         $uploadId = trim((string) (($init['data']['id'] ?? $init['data']['upload_id'] ?? $init['id'] ?? '')));
@@ -72,7 +78,7 @@ final class GateZipUploader
 
         $this->json('POST', GateUrl::route($gateUrl, 'put/complete'), $token, [
             'upload_id' => $uploadId,
-            'file_hash' => hash_file('sha256', $localZip),
+            'file_hash' => $fileHash,
         ]);
         PushProgress::arrow('HTTP upload done');
     }
