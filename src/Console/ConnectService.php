@@ -53,7 +53,7 @@ final class ConnectService
         $kit = false;
         $cliVia = $via !== null ? strtolower(trim($via)) : '';
         $configuredVia = strtolower(trim((string) ($raw['via'] ?? '')));
-        $pick = $interactivePick ?? $io->isInteractive();
+        $pick = $interactivePick ?? true;
 
         if ($bootstrapFtp) {
             $cliVia = $cliVia !== '' ? $cliVia : 'ftp';

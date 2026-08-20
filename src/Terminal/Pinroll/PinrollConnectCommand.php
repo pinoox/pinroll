@@ -45,6 +45,7 @@ class PinrollConnectCommand extends Terminal
                 $via !== '' ? $via : null,
                 (bool) $input->getOption('bootstrap-ftp'),
                 (bool) $input->getOption('reset'),
+                $input->isInteractive(),
             );
 
             if (($result['mode'] ?? '') === 'verified') {

@@ -73,7 +73,7 @@ class PinrollKitCommand extends Terminal
 
             $pathOpt = trim((string) ($input->getOption('path') ?? ''));
             $dir = HostDir::normalize($pathOpt !== '' ? $pathOpt : (
-                $io->isInteractive()
+                $input->isInteractive()
                     ? (string) $io->ask('Deploy folder on host (usually public_html)', $dirDefault)
                     : $dirDefault
             ));
