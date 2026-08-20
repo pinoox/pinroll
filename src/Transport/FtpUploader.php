@@ -5,6 +5,7 @@ namespace Pinoox\Pinroll\Transport;
 use Pinoox\Pinroll\Exception\PinrollException;
 use Pinoox\Pinroll\Support\HostDir;
 use Pinoox\Pinroll\Support\PushProgress;
+use Pinoox\Pinroll\Support\PushProgressBar;
 
 final class FtpUploader
 {
