@@ -407,6 +407,7 @@ final class DeployRunner
         bool $upload = true,
         bool $withVendor = false,
         ?bool $embedToken = null,
+        bool $kit = false,
     ): array {
         $target = Pinroll::hosts()->resolve($targetName);
         $raw = Pinroll::hosts()->raw($targetName);
@@ -424,16 +425,6 @@ final class DeployRunner
         $webForUrl = HostDir::webPathFromHost(array_key_exists('web_path', $raw)
             ? $raw
             : array_merge($raw, ['deploy_path' => $dir]));
-
-        // Always keep local files until FTP upload finishes (then cleanup). Zip is optional.
-        PushProgress::arrow('Building PinGate files…');
-        $exporter = new PinGateExporter(Pinroll::paths());
-        $export = $exporter->export($targetName, [
-            'target' => $targetName,
-            'token_hash' => $hash,
-            'created_at' => date('c'),
-            'dir' => $dir,
-        ], $zip, $webForUrl, keepLocal: true, withVendor: $withVendor);
 
         $resolvedUrl = $gateUrl !== null ? rtrim($gateUrl, '/') : '';
         $gateUrlFromUser = $resolvedUrl !== '';
@@ -458,6 +449,33 @@ final class DeployRunner
             $label,
         );
 
+        $root = $this->projectRoot ?? Pinroll::paths()->root();
+        $tokenFile = \Pinoox\Pinroll\PinGate\GateTokenRegistry::writeTokenFile($root, $label, $token);
+
+        $wantZip = $zip || $kit;
+        $extraFiles = [];
+        $readmePath = null;
+        if ($wantZip) {
+            $extraFiles[$tokenFile] = \Pinoox\Pinroll\PinGate\GateTokenRegistry::hostUploadPath($label);
+            $readmePath = ProjectPaths::workDir(Pinroll::paths()) . '/KIT-README.txt';
+            file_put_contents($readmePath, BootstrapKit::readme($site, $dir, $label));
+            $extraFiles[$readmePath] = 'README.txt';
+        }
+
+        // Always keep local files until FTP upload finishes (then cleanup). Zip is optional.
+        PushProgress::arrow($kit ? 'Building PinGate kit (extract into public_html)…' : 'Building PinGate files…');
+        $exporter = new PinGateExporter(Pinroll::paths());
+        $export = $exporter->export($targetName, [
+            'target' => $targetName,
+            'token_hash' => $hash,
+            'created_at' => date('c'),
+            'dir' => $dir,
+        ], $wantZip, $webForUrl, keepLocal: true, withVendor: $withVendor, extraFiles: $extraFiles, kit: $kit || ($zip && !$upload));
+
+        if ($readmePath !== null && is_file($readmePath)) {
+            @unlink($readmePath);
+        }
+
         $uploaded = false;
         $uploadInfo = null;
         if ($upload && GateDeployer::canUpload($target)) {
@@ -474,13 +492,14 @@ final class DeployRunner
                 ProjectPaths::workDir(Pinroll::paths()) . '/htaccess.snippet',
                 (string) $export['gate_dir'],
             );
-            $zipPath = ProjectPaths::deployZip(Pinroll::paths(), $targetName);
-            if (is_file($zipPath)) {
-                @unlink($zipPath);
+            foreach ([ProjectPaths::deployZip(Pinroll::paths(), $targetName), ProjectPaths::kitZip(Pinroll::paths(), $targetName)] as $zipPath) {
+                if (is_file($zipPath)) {
+                    @unlink($zipPath);
+                }
             }
             $export['zip'] = null;
-        } elseif ($zip) {
-            // Zip-only manual upload: drop loose files, keep the archive.
+        } elseif ($wantZip) {
+            // Zip/kit manual upload: drop loose files, keep the archive.
             $exporter->cleanupLocalArtifacts(
                 (string) $export['entry'],
                 ProjectPaths::workDir(Pinroll::paths()) . '/htaccess.snippet',
@@ -489,7 +508,7 @@ final class DeployRunner
         }
 
         $tokenSync = GateTokenSyncer::sync(
-            $this->projectRoot ?? Pinroll::paths()->root(),
+            $root,
             $targetName,
             $target,
             $raw,
@@ -499,9 +518,10 @@ final class DeployRunner
 
         return [
             'bootstrap' => $export['index'],
-            'gate_dir' => ($uploaded || $zip) ? null : $export['gate_dir'],
-            'entry' => ($uploaded || $zip) ? null : $export['entry'],
+            'gate_dir' => ($uploaded || $wantZip) ? null : $export['gate_dir'],
+            'entry' => ($uploaded || $wantZip) ? null : $export['entry'],
             'zip' => $export['zip'],
+            'kit' => $kit || (($export['zip'] ?? null) !== null && !$uploaded && !$upload),
             'dir' => $dir,
             'token' => $token,
             'token_reused' => $tokenReused,

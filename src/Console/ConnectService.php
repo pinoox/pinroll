@@ -34,6 +34,7 @@ final class ConnectService
         ?string $via = null,
         bool $bootstrapFtp = false,
         bool $reset = false,
+        ?bool $interactivePick = null,
     ): array {
         PinrollAutoloader::register($this->projectRoot);
         $paths = new NativePathResolver($this->projectRoot);
@@ -48,17 +49,23 @@ final class ConnectService
             Pinroll::boot($paths);
             $raw = Pinroll::hosts()->raw($hostName);
         }
-        $resolvedVia = strtolower(trim($via ?? (string) ($raw['via'] ?? 'ftp')));
-        if ($resolvedVia === '') {
-            $resolvedVia = 'ftp';
+
+        $kit = false;
+        $cliVia = $via !== null ? strtolower(trim($via)) : '';
+        $configuredVia = strtolower(trim((string) ($raw['via'] ?? '')));
+        $pick = $interactivePick ?? $io->isInteractive();
+
+        if ($bootstrapFtp) {
+            $cliVia = $cliVia !== '' ? $cliVia : 'ftp';
         }
 
-        if ($bootstrapFtp && $resolvedVia === 'pinion') {
-            $resolvedVia = 'ftp';
+        $checkVia = $cliVia !== '' ? $cliVia : ($configuredVia !== '' ? $configuredVia : 'ftp');
+        if ($bootstrapFtp) {
+            $checkVia = 'pinion';
         }
 
-        if (!$reset && self::isSetupComplete($hostName, $resolvedVia)) {
-            return $this->verifyExisting($io, $hostName, $resolvedVia);
+        if (!$reset && self::isSetupComplete($hostName, $checkVia) && $cliVia === '' && !$bootstrapFtp) {
+            return $this->verifyExisting($io, $hostName, $checkVia);
         }
 
         if ($reset) {
@@ -67,7 +74,44 @@ final class ConnectService
             $io->newLine();
         }
 
-        return $this->runSetup($io, $hostName, $resolvedVia, $bootstrapFtp, $configFile, $paths, $raw);
+        if ($cliVia !== '') {
+            $resolvedVia = $cliVia;
+        } elseif ($pick) {
+            $choice = $this->askMethod($io);
+            $method = BootstrapKit::resolveMethod($choice);
+            $resolvedVia = $method['via'];
+            $bootstrapFtp = $bootstrapFtp || $method['bootstrap_ftp'];
+            $kit = $method['kit'];
+        } else {
+            $resolvedVia = $configuredVia !== '' ? $configuredVia : 'ftp';
+        }
+
+        if ($bootstrapFtp && $resolvedVia === 'pinion') {
+            $resolvedVia = 'ftp';
+        }
+
+        if ($resolvedVia === 'pinion') {
+            $kit = true;
+        }
+
+        return $this->runSetup($io, $hostName, $resolvedVia, $bootstrapFtp, $configFile, $paths, $raw, $kit);
+    }
+
+    private function askMethod(SymfonyStyle $io): string
+    {
+        $io->section('Choose setup method');
+        $io->writeln([
+            '  <fg=gray>Pick how PinGate reaches the host. You can change later with</>',
+            '  <comment>pinroll:connect --reset</comment> <fg=gray>or</> <comment>--via=…</comment>',
+            '',
+        ]);
+
+        $labels = [];
+        foreach (BootstrapKit::methodChoices() as $row) {
+            $labels[$row['key']] = $row['label'];
+        }
+
+        return (string) $io->choice('Setup method', $labels, 'kit');
     }
 
     /**
@@ -82,6 +126,7 @@ final class ConnectService
         string $configFile,
         NativePathResolver $paths,
         array $raw,
+        bool $kit = false,
     ): array {
         if ($resolvedVia === 'ftp') {
             $this->assertFtpReady($io, $raw, $hostName);
@@ -89,13 +134,13 @@ final class ConnectService
             $this->assertSshReady($io, $raw, $hostName);
         }
 
-        $io->section('Connect — ' . $hostName . ' (' . $resolvedVia . ')');
+        $io->section('Connect — ' . $hostName . ' (' . ($bootstrapFtp ? 'ftp → pinion' : $resolvedVia) . ')');
 
+        $dirLabel = $resolvedVia === 'pinion'
+            ? 'Deploy folder on host (usually public_html)'
+            : 'FTP folder (subdomain folder at account root, e.g. apps)';
         $dirDefault = HostDir::fromHost($raw);
-        $dir = HostDir::normalize((string) $io->ask(
-            'FTP folder (subdomain folder at account root, e.g. apps)',
-            $dirDefault,
-        ));
+        $dir = HostDir::normalize((string) $io->ask($dirLabel, $dirDefault !== '' ? $dirDefault : 'public_html'));
 
         $gate = HostGate::credentials($raw, $resolvedVia);
         $siteDefault = $gate['site'] !== ''
@@ -128,13 +173,11 @@ final class ConnectService
         Pinroll::boot($paths);
 
         $upload = $resolvedVia !== 'pinion';
-        if ($resolvedVia === 'pinion') {
-            $io->note([
-                'Pinion transport: upload pingate.php + gate/ to the host manually,',
-                'or run: php pinoox pinroll:gate ' . $hostName . ' -z',
-                'Optional one-time FTP bootstrap: pinroll:connect --bootstrap-ftp',
-            ]);
-        } else {
+        $buildKit = $kit || $resolvedVia === 'pinion';
+
+        if ($buildKit && !$upload) {
+            $io->writeln('  <fg=gray>Building extractable PinGate kit…</>');
+        } elseif ($upload) {
             $io->writeln('  <fg=gray>Building & uploading PinGate…</>');
         }
 
@@ -162,11 +205,14 @@ final class ConnectService
         try {
             $gate = (new DeployRunner($this->projectRoot))->initGate(
                 $hostName,
-                false,
+                $buildKit,
                 $dir,
                 $gateUrl,
                 false,
                 $upload,
+                false,
+                null,
+                $buildKit,
             );
         } finally {
             PushProgress::bind(null);
@@ -176,6 +222,7 @@ final class ConnectService
             'host' => $hostName,
             'target' => $hostName,
             'mode' => 'setup',
+            'method' => $buildKit ? 'kit' : $saveVia,
         ], $gate);
     }
 

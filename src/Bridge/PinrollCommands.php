@@ -14,6 +14,7 @@ final class PinrollCommands
         return [
             \Pinoox\Terminal\Pinroll\PinrollInitCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollConnectCommand::class,
+            \Pinoox\Terminal\Pinroll\PinrollKitCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollProvisionCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollSetupCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollAppsCommand::class,

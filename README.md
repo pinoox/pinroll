@@ -33,25 +33,39 @@ Put Pinroll in `require` only if you want PinGate to use Pinroll classes on the 
 
 ```bash
 php pinoox pinroll:init
-# fill FTP/SSH in .pinoox/pinroll.config.php or .env
-php pinoox pinroll:provision          # first install on empty FTP
+php pinoox pinroll:connect          # interactive: kit / FTP / SSH
 # later:
-php pinoox pinroll:connect
-php pinoox pinroll:apps
-php pinoox pinroll:deploy --full      # platform + every installed app
+php pinoox pinroll:deploy --full
+```
+
+### Setup methods (no guessing)
+
+| Method | When | Command |
+|--------|------|---------|
+| **Zip kit** | No FTP — extract into `public_html` | `php pinoox pinroll:kit` |
+| **FTP** | Shared hosting with FTP | `php pinoox pinroll:connect --via=ftp` |
+| **SSH** | VPS | `php pinoox pinroll:connect --via=ssh` |
+| **FTP → Pinion** | Upload gate once, then HTTP | `php pinoox pinroll:connect --bootstrap-ftp` |
+
+**Zip kit flow:**
+
+```bash
+php pinoox pinroll:kit
+# → storage/pinroll/pinroll-kit-production.zip
+# Extract into public_html (File Manager)
+php pinoox pinroll:check
+php pinoox pinroll:deploy
 ```
 
 | Step | Command | What it does |
 |------|---------|--------------|
 | 1 | `pinroll:init` | Scaffold `.pinoox/pinroll.config.php` |
-| 2 | Edit `.env` | Set `PINROLL_*` FTP/SSH keys |
-| 3 | `pinroll:provision` | **Blank host:** PinGate + platform.zip + installer setup |
-| 3b | `pinroll:connect` | Existing site: deploy path, site URL, upload PinGate |
-| 4 | `pinroll:apps` | Set default packages for the host |
-| 5 | `pinroll:vendor --push` | Build production `vendor.zip`, upload, extract on host |
-| 6 | `pinroll:check` | Verify transport + PinGate |
-| 7 | `pinroll:deploy` | Build, upload, and install (go live) |
-| 8 | `pinroll:setup` | Post-deploy migrate + patch (`--seed`, `--config`) |
+| 2 | `pinroll:kit` or `pinroll:connect` | PinGate on host (kit / FTP / SSH) |
+| 3 | `pinroll:apps` | Set default packages for the host |
+| 4 | `pinroll:vendor --push` | Build production `vendor.zip`, upload, extract on host |
+| 5 | `pinroll:check` | Verify transport + PinGate |
+| 6 | `pinroll:deploy` | Build, upload, and install (go live) |
+| 7 | `pinroll:setup` | Post-deploy migrate + patch (`--seed`, `--config`) |
 
 Single-app (pinx-root): `pinx deploy` forwards to `pinroll:deploy`.
 
@@ -71,7 +85,7 @@ If `pinroll:check` reports **Not PinGate JSON**, upload `pingate.php` next to `i
 
 ```bash
 php pinoox pinroll:init
-php pinoox pinroll:provision
+php pinoox pinroll:kit
 php pinoox pinroll:connect
 php pinoox pinroll:config
 php pinoox pinroll:apps
@@ -91,14 +105,16 @@ php pinoox pinroll:history
 php pinoox pinroll:rollback
 php pinoox pinroll:cleanup
 php pinoox pinroll:gate
+php pinoox pinroll:gate --kit
 php pinoox pinroll:vendor
 php pinoox pinroll:vendor --push
 php pinoox pinroll:pull --server=https://releases.example.com
 ```
 
 - `pinroll:init` — scaffold a short `.pinoox/pinroll.config.php` overlay + `.env` key stubs (canonical defaults live in the Pinroll library)
+- `pinroll:kit` — build `storage/pinroll/pinroll-kit-{host}.zip` (pingate.php + token + README) for File Manager extract
 - `pinroll:provision` — blank-host install: PinGate + `platform.zip` extract + installer setup (welcome/manager router, installer disabled; `--setup-only` to retry setup)
-- `pinroll:connect` — configure host + upload PinGate; writes **site origin + token** into the overlay; verifies if already set (`--reset` to redo)
+- `pinroll:connect` — interactive method picker (kit / FTP / SSH) or `--via=`; writes **site origin + token** into the overlay
 - `pinroll:config` — print resolved host (origin, gate URL, via, path, token redacted)
 - `pinroll:apps` — set `hosts.*.apps` (interactive or `--apps=`)
 - `pinroll:check` — verify host connectivity before push
@@ -111,7 +127,7 @@ php pinoox pinroll:pull --server=https://releases.example.com
 - `pinroll:install` — install a staged release (`pinroll:apply` is a deprecated alias)
 - `pinroll:rollback` — switch the host back to a previous release
 - `pinroll:cleanup` — prune local/remote archives by `keep` / `store`
-- `pinroll:gate` — rebuild/upload a single `pingate.php` (`-z` zip; `--no-upload` keep local)
+- `pinroll:gate` — rebuild/upload a single `pingate.php` (`--kit` / `-z` zip; `--no-upload` keep local)
 - `pinroll:vendor` — production `vendor.zip` via PlatformComposer (`--push` FTP + PinGate `POST ?route=vendor`)
 - `pinroll:pull` — pull newer manifest from a release server (alias: `pinroll:poll`)
 

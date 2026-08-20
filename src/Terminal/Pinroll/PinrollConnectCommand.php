@@ -25,7 +25,7 @@ class PinrollConnectCommand extends Terminal
         $this
             ->addArgument('host', InputArgument::OPTIONAL, 'Host name')
             ->addOption('host', null, InputOption::VALUE_REQUIRED, 'Host override')
-            ->addOption('via', null, InputOption::VALUE_REQUIRED, 'Transport: ftp, ssh, pinion')
+            ->addOption('via', null, InputOption::VALUE_REQUIRED, 'Transport: ftp, ssh, pinion (omit to pick interactively)')
             ->addOption('bootstrap-ftp', null, InputOption::VALUE_NONE, 'Upload gate via FTP once, then set via=pinion')
             ->addOption('reset', null, InputOption::VALUE_NONE, 'Re-run deploy path, site URL, and PinGate setup');
     }

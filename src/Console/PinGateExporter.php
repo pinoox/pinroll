@@ -20,6 +20,7 @@ final class PinGateExporter
 
     /**
      * @param array<string, mixed> $gateConfig
+     * @param array<string, string> $extraFiles local path => path inside zip
      * @return array{
      *     gate_dir: string,
      *     entry: string,
@@ -36,6 +37,8 @@ final class PinGateExporter
         ?string $hostDir = null,
         bool $keepLocal = false,
         bool $withVendor = false,
+        array $extraFiles = [],
+        bool $kit = false,
     ): array {
         unset($withVendor);
         $hostDir = HostDir::normalize($hostDir ?? (string) ($gateConfig['dir'] ?? $gateConfig['host_dir'] ?? $gateConfig['install'] ?? ''));
@@ -56,10 +59,16 @@ final class PinGateExporter
 
         $zipPath = null;
         if ($zip) {
-            $zipPath = $this->createZip($target, [
+            $files = [
                 $entryPath => HostDir::GATE_ENTRY,
                 $snippetPath => 'htaccess.snippet',
-            ]);
+            ];
+            foreach ($extraFiles as $source => $nameInZip) {
+                if (is_string($source) && is_string($nameInZip) && is_file($source)) {
+                    $files[$source] = $nameInZip;
+                }
+            }
+            $zipPath = $this->createZip($target, $files, $kit);
         }
 
         if ($zip && !$keepLocal) {
@@ -123,13 +132,15 @@ HTACCESS;
     /**
      * @param array<string, string> $files
      */
-    private function createZip(string $target, array $files): string
+    private function createZip(string $target, array $files, bool $kit = false): string
     {
         if (!class_exists(ZipArchive::class)) {
             throw new PinrollException('ZipArchive is not available. Install the PHP zip extension.');
         }
 
-        $zipPath = ProjectPaths::deployZip($this->paths, $target);
+        $zipPath = $kit
+            ? ProjectPaths::kitZip($this->paths, $target)
+            : ProjectPaths::deployZip($this->paths, $target);
         $zip = new ZipArchive();
 
         if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {

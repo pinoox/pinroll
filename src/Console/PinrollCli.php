@@ -181,18 +181,23 @@ final class PinrollCli
         if ($uploaded) {
             $remote = is_array($data['upload'] ?? null) ? (string) ($data['upload']['remote_root'] ?? '') : '';
             $files = is_array($data['upload'] ?? null) ? (int) ($data['upload']['files'] ?? 0) : 0;
-            $io->section('FTP');
+            $io->section('Upload');
             $io->writeln([
-                '  <fg=green>Uploaded</> pingate.php + gate/' . ($remote !== '' ? ' → <comment>' . self::escape($remote) . '</comment>' : ''),
+                '  <fg=green>Uploaded</> pingate.php' . ($remote !== '' ? ' → <comment>' . self::escape($remote) . '</comment>' : ''),
                 $files > 0 ? '  <fg=gray>Files:</> ' . $files : '',
                 '  <fg=gray>Local PinGate files removed</>',
             ]);
         } elseif ($zip !== '') {
-            $io->section('Upload to server');
+            $isKit = (bool) ($data['kit'] ?? str_contains($zip, 'pinroll-kit-'));
+            $io->section($isKit ? 'Extract kit on host (no FTP)' : 'Upload to server');
             $io->writeln([
-                '  <fg=gray>Zip</>      <comment>' . self::escape(self::relPath($zip)) . '</comment>',
-                '  <fg=gray>Extract</> <comment>' . self::escape($extractTo) . '</comment>',
-                '  <fg=gray>Files</>   pingate.php next to platform vendor/',
+                '  <fg=gray>Zip</>       <comment>' . self::escape(self::relPath($zip)) . '</comment>',
+                '  <fg=gray>Extract</>   <comment>' . self::escape($extractTo) . '</comment>',
+                '  <fg=gray>Contains</>  pingate.php + storage/pinroll/tokens/… + README.txt',
+                '',
+                '  <fg=yellow>1.</> Extract the zip into public_html (File Manager)',
+                '  <fg=yellow>2.</> <comment>php pinoox pinroll:check</comment>',
+                '  <fg=yellow>3.</> <comment>php pinoox pinroll:deploy</comment>',
             ]);
         } elseif (!empty($data['entry']) || !empty($data['gate_dir'])) {
             $io->section('Local files (no FTP upload)');
@@ -200,7 +205,7 @@ final class PinrollCli
                 '  <fg=gray>Entry</> <comment>storage/pinroll/pingate.php</comment>',
                 '  <fg=gray>Copy to</> <comment>' . self::escape($extractTo) . '</comment> as pingate.php',
                 '',
-                '  Or: <comment>php pinoox pinroll:gate ' . $target . ' -z</comment> for a zip',
+                '  Or kit zip: <comment>php pinoox pinroll:kit ' . $target . '</comment>',
             ]);
         }
 
@@ -233,21 +238,23 @@ final class PinrollCli
         $passKey = ConfigWriter::envKeyFor($target, 'password', 'ftp');
 
         $io->newLine();
-        $io->section('Next steps');
+        $io->section('Pick a setup method');
         $io->writeln([
-            '  <fg=yellow>1.</> Set FTP credentials in <comment>.pinoox/pinroll.config.php</comment> or <comment>.env</comment>:',
-            '       ' . $hostKey . '=',
-            '       ' . $userKey . '=',
-            '       ' . $passKey . '=',
+            '  <fg=yellow>A.</> No FTP — zip kit (extract into public_html):',
+            '       <comment>php pinoox pinroll:kit' . $hostArg . '</comment>',
+            '       <fg=gray>or</> <comment>php pinoox pinroll:connect' . $hostArg . ' --via=pinion</comment>',
             '',
-            '  <fg=yellow>2.</> Blank host — first install:',
-            '       <comment>php pinoox pinroll:provision' . $hostArg . '</comment>',
+            '  <fg=yellow>B.</> FTP — auto-upload PinGate:',
+            '       Set in .env / overlay: ' . $hostKey . ' / ' . $userKey . ' / ' . $passKey,
+            '       <comment>php pinoox pinroll:connect' . $hostArg . ' --via=ftp</comment>',
             '',
-            '  <fg=yellow>3.</> Existing site — connect & upload PinGate:',
+            '  <fg=yellow>C.</> SSH/SFTP:',
+            '       <comment>php pinoox pinroll:connect' . $hostArg . ' --via=ssh</comment>',
+            '',
+            '  <fg=yellow>D.</> Interactive picker (recommended):',
             '       <comment>php pinoox pinroll:connect' . $hostArg . '</comment>',
-            '       <fg=gray>Writes site origin + shared token into the overlay (not .env).</>',
             '',
-            '  <fg=yellow>4.</> Go live / update:',
+            '  Then go live:',
             '       <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>',
             '       <fg=gray>or platform + all apps:</> <comment>php pinoox pinroll:deploy --full' . $hostArg . '</comment>',
         ]);
@@ -315,10 +322,15 @@ final class PinrollCli
         $target = (string) ($data['host'] ?? $data['target'] ?? 'production');
         $uploaded = (bool) ($data['uploaded'] ?? false);
         $gateUrl = (string) ($data['gate_url'] ?? '');
+        $zip = (string) ($data['zip'] ?? '');
+        $extractTo = (string) ($data['extract_to'] ?? '');
+        $isKit = (bool) ($data['kit'] ?? false) || str_contains($zip, 'pinroll-kit-');
 
         $io->newLine();
         $io->block(
-            $uploaded ? 'Setup complete — PinGate uploaded' : 'Setup complete — PinGate ready',
+            $uploaded
+                ? 'Setup complete — PinGate uploaded'
+                : ($isKit ? 'Setup complete — extract kit on host' : 'Setup complete — PinGate ready'),
             'OK',
             'fg=black;bg=green',
             ' ',
@@ -329,19 +341,26 @@ final class PinrollCli
             $io->writeln('  <fg=gray>URL</>  <comment>' . self::escape($gateUrl) . '</comment>');
         }
 
-        if ($uploaded) {
-            $io->writeln('  <fg=green>Uploaded</> pingate.php + gate/ via FTP');
-        }
-
         $hostArg = self::hostCliSuffix($target);
 
-        $io->newLine();
-        $io->writeln('  Go live (push + install):');
-        $io->writeln('  <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>');
-        $io->writeln(
-            '  <fg=gray>or</> <comment>php pinoox pinroll:push' . $hostArg . '</comment>'
-            . ' then <comment>php pinoox pinroll:install' . $hostArg . '</comment>',
-        );
+        if ($uploaded) {
+            $io->writeln('  <fg=green>Uploaded</> pingate.php via transport');
+            $io->newLine();
+            $io->writeln('  Go live (push + install):');
+            $io->writeln('  <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>');
+        } elseif ($zip !== '') {
+            $io->section('Do this now');
+            $io->writeln([
+                '  <fg=yellow>1.</> Extract <comment>' . self::escape(self::relPath($zip)) . '</comment>',
+                '     into <comment>' . self::escape($extractTo !== '' ? $extractTo : 'public_html/') . '</comment>',
+                '  <fg=yellow>2.</> <comment>php pinoox pinroll:check' . $hostArg . '</comment>',
+                '  <fg=yellow>3.</> <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>',
+            ]);
+        } else {
+            $io->newLine();
+            $io->writeln('  Go live (push + install):');
+            $io->writeln('  <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>');
+        }
     }
 
     /**
@@ -595,17 +614,22 @@ final class PinrollCli
 
     public static function relPath(string $path): string
     {
-        if (preg_match('#/pinroll/.+#', $path, $match)) {
-            return ltrim($match[0], '/');
-        }
+        $normalized = str_replace('\\', '/', $path);
 
         if (defined('PINOOX_BASE_PATH')) {
-            $root = rtrim((string) PINOOX_BASE_PATH, '/') . '/';
-            if (str_starts_with($path, $root)) {
-                return substr($path, strlen($root));
+            $root = rtrim(str_replace('\\', '/', (string) PINOOX_BASE_PATH), '/') . '/';
+            if (str_starts_with($normalized, $root)) {
+                return substr($normalized, strlen($root));
             }
+        }
+
+        if (preg_match('#(?:^|/)(storage/pinroll/.+)$#', $normalized, $match)) {
+            return $match[1];
+        }
+
+        if (preg_match('#(?:^|/)(\.pinoox/.+)$#', $normalized, $match)) {
+            return $match[1];
         }
 
         return $path;
     }
-}

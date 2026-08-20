@@ -30,6 +30,7 @@ class PinrollGateInitCommand extends Terminal
             ->addArgument('host', InputArgument::OPTIONAL, 'Host name (omit when default_host is set)')
             ->addOption('host', null, InputOption::VALUE_REQUIRED, 'Host override')
             ->addOption('zip', 'z', InputOption::VALUE_NONE, 'Also build pinroll/deploy-{host}.zip (manual upload)')
+            ->addOption('kit', null, InputOption::VALUE_NONE, 'Build pinroll-kit-{host}.zip (extract into public_html; implies --no-upload)')
             ->addOption('no-upload', null, InputOption::VALUE_NONE, 'Skip upload; keep files in pinroll/')
             ->addOption('with-vendor', null, InputOption::VALUE_NONE, 'Bundle pinroll vendor into gate/ (slow; only if host lacks pinroll)')
             ->addOption('rotate', null, InputOption::VALUE_NONE, 'Mint a new local gate.token (upload your storage/pinroll/tokens/{label}.php afterward)')
@@ -45,8 +46,9 @@ class PinrollGateInitCommand extends Terminal
         try {
             $root = defined('PINOOX_BASE_PATH') ? PINOOX_BASE_PATH : getcwd();
             $hostName = PinrollInput::hostName($input);
-            $zip = (bool) $input->getOption('zip');
-            $upload = !(bool) $input->getOption('no-upload');
+            $kit = (bool) $input->getOption('kit');
+            $zip = (bool) $input->getOption('zip') || $kit;
+            $upload = !(bool) $input->getOption('no-upload') && !$kit;
             $rotate = (bool) $input->getOption('rotate');
             $withVendor = (bool) $input->getOption('with-vendor');
             $embedToken = (bool) $input->getOption('embed-token');
@@ -83,6 +85,7 @@ class PinrollGateInitCommand extends Terminal
                     $upload,
                     $withVendor,
                     $embedToken,
+                    $kit,
                 );
             } finally {
                 PushProgress::bind(null);

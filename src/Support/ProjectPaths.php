@@ -68,6 +68,14 @@ final class ProjectPaths
         return self::workDir($paths) . '/deploy-' . $slug . '.zip';
     }
 
+    /** Ready-to-extract PinGate package for File Manager (pinion / no FTP). */
+    public static function kitZip(PathResolverInterface $paths, string $target): string
+    {
+        $slug = preg_replace('/[^a-zA-Z0-9_-]+/', '-', $target) ?: 'target';
+
+        return self::workDir($paths) . '/pinroll-kit-' . $slug . '.zip';
+    }
+
     public static function vendorPackZip(PathResolverInterface $paths): string
     {
         return self::workDir($paths) . '/vendor.zip';

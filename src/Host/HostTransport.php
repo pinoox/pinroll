@@ -24,7 +24,10 @@ final class HostTransport
                 continue;
             }
 
-            if ($name === 'pinion' && HostGate::isConfigured($host) && (string) ($host['via'] ?? '') === 'pinion') {
+            if ($name === 'pinion' && (
+                (string) ($host['via'] ?? '') === 'pinion'
+                || HostGate::isConfigured($host)
+            )) {
                 $names[] = 'pinion';
 
                 continue;
@@ -58,7 +61,11 @@ final class HostTransport
 
         $available = self::names($host);
         if (!in_array($via, $available, true)) {
-            if ($via !== 'pinion' || !HostGate::isConfigured($host)) {
+            $allowPinion = $via === 'pinion' && (
+                (string) ($host['via'] ?? '') === 'pinion'
+                || HostGate::isConfigured($host)
+            );
+            if (!$allowPinion) {
                 throw new PinrollException(
                     'Transport "' . $via . '" is not configured for this host. Available: ' . implode(', ', $available),
                 );
