@@ -119,6 +119,15 @@ final class DeployRunner
             PushSteps::done();
         }
 
+        if ($this->needsUpload($plan)) {
+            PushSteps::start('Cleanup leftovers');
+            RetentionPolicy::cleanBeforeDeploy(
+                array_merge($rawHost, $target),
+                HostGate::credentials($rawHost),
+            );
+            PushSteps::done();
+        }
+
         $transport = Pinroll::transports()->resolve($target);
 
         foreach ($builds as $index => $result) {
@@ -185,6 +194,14 @@ final class DeployRunner
 
         if ($this->needsUpload($plan)) {
             $steps[] = 'Connect via ' . $transportName;
+        }
+
+        if ($apply && ($plan['app'] || !empty($plan['platform']))) {
+            $steps[] = 'Ensure PinGate';
+        }
+
+        if ($this->needsUpload($plan)) {
+            $steps[] = 'Cleanup leftovers';
         }
 
         if ($plan['app']) {

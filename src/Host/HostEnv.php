@@ -51,6 +51,16 @@ final class HostEnv
             $host['auto_clean'] = filter_var($autoClean, FILTER_VALIDATE_BOOLEAN);
         }
 
+        $cleanBeforeDeploy = self::read($name, 'CLEAN_BEFORE_DEPLOY');
+        if ($cleanBeforeDeploy !== null) {
+            $host['clean_before_deploy'] = filter_var($cleanBeforeDeploy, FILTER_VALIDATE_BOOLEAN);
+        }
+
+        $staleDays = self::read($name, 'STALE_DAYS');
+        if ($staleDays !== null && is_numeric($staleDays)) {
+            $host['stale_days'] = max(0, (int) $staleDays);
+        }
+
         $apps = self::read($name, 'APPS');
         if ($apps !== null) {
             $host['apps'] = $apps === ''

@@ -61,6 +61,16 @@ function pinroll_pingate_run(string $root, array $gateConfig = []): void
         return;
     }
 
+    if ($method === 'POST' && $path === 'cleanup') {
+        $input = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($input) || $input === []) {
+            $input = $_POST;
+        }
+        pinroll_handle_direct_cleanup($root, $gateConfig, is_array($input) ? $input : []);
+
+        return;
+    }
+
     try {
         $root = pinroll_resolve_platform_root($root, $gateConfig);
     } catch (Throwable $e) {
@@ -1059,6 +1069,22 @@ function pinroll_handle_direct_install(string $root, array $gateConfig, array $i
     }
 }
 
+function pinroll_handle_direct_cleanup(string $root, array $gateConfig, array $input): void
+{
+    try {
+        $root = pinroll_resolve_platform_root($root, $gateConfig);
+    } catch (Throwable $e) {
+        pinroll_gate_json_error(503, $e->getMessage());
+
+        return;
+    }
+
+    $incoming = pinroll_incoming_dir($root);
+    $result = pinroll_pincore_cleanup($root, $incoming, $input);
+    header('Content-Type: application/json');
+    echo json_encode(['success' => true, 'data' => $result], JSON_UNESCAPED_UNICODE);
+}
+
 /**
  * Host handler when pinoox/pinroll is not installed (require-dev). Uses pincore Pinx + Pinion.
  *
@@ -1262,35 +1288,167 @@ function pinroll_pincore_incoming(string $incoming): array
 function pinroll_pincore_cleanup(string $root, string $incoming, array $input): array
 {
     $keep = isset($input['keep']) ? max(0, (int) $input['keep']) : 3;
-    $deleted = 0;
+    $staleDays = isset($input['stale_days']) ? max(0, (int) $input['stale_days']) : 7;
+    $dryRun = !empty($input['dry_run']);
+    $deleted = [];
+    $kept = [];
+    $bytesFreed = 0;
+    $staleCutoff = $staleDays > 0 ? time() - ($staleDays * 86400) : 0;
+    $zipCutoff = $staleDays > 0 ? $staleCutoff : time() - 86400;
+
     $files = [];
     foreach (scandir($incoming) ?: [] as $name) {
         if ($name === '.' || $name === '..') {
             continue;
         }
         $path = $incoming . '/' . $name;
-        if (is_file($path)) {
-            $files[] = ['path' => $path, 'mtime' => (int) filemtime($path)];
-        }
-    }
-    usort($files, static fn (array $a, array $b): int => $b['mtime'] <=> $a['mtime']);
-    foreach ($files as $index => $file) {
-        if ($index < $keep) {
+        if (!is_file($path)) {
             continue;
         }
-        @unlink($file['path']);
-        $deleted++;
+
+        $lower = strtolower($name);
+        $isArchive = str_ends_with($lower, '.pinx')
+            || str_ends_with($lower, '.zip')
+            || str_ends_with($lower, '.tar')
+            || str_ends_with($lower, '.tar.gz');
+
+        if ($isArchive) {
+            $files[] = ['path' => $path, 'name' => $name, 'mtime' => (int) filemtime($path), 'bytes' => (int) filesize($path), 'archive' => true];
+
+            continue;
+        }
+
+        $bytes = (int) filesize($path);
+        if (!$dryRun) {
+            @unlink($path);
+        }
+        $bytesFreed += $bytes;
+        $deleted[] = [
+            'path' => 'incoming/' . $name,
+            'bytes' => $bytes,
+            'reason' => 'orphan upload artifact',
+        ];
     }
 
-    pinroll_remove_directory($root . '/storage/tmp');
-    @mkdir($root . '/storage/tmp', 0755, true);
+    usort($files, static fn (array $a, array $b): int => $b['mtime'] <=> $a['mtime']);
+    foreach ($files as $index => $file) {
+        $isStale = $staleCutoff > 0 && $file['mtime'] < $staleCutoff;
+        if ($index < $keep && !$isStale) {
+            $kept[] = 'incoming/' . $file['name'];
 
-    $legacy = $root . '/pinroll';
+            continue;
+        }
+
+        if (!$dryRun) {
+            @unlink($file['path']);
+        }
+        $bytesFreed += $file['bytes'];
+        $deleted[] = [
+            'path' => 'incoming/' . $file['name'],
+            'bytes' => $file['bytes'],
+            'reason' => $isStale ? 'older than stale_days=' . $staleDays : 'older than keep=' . $keep,
+        ];
+    }
+
+    foreach (['platform.zip', 'vendor.zip'] as $zipName) {
+        $zipPath = rtrim($root, '/') . '/' . $zipName;
+        if (!is_file($zipPath)) {
+            continue;
+        }
+        $mtime = (int) filemtime($zipPath);
+        if ($mtime >= $zipCutoff) {
+            continue;
+        }
+        $bytes = (int) filesize($zipPath);
+        if (!$dryRun) {
+            @unlink($zipPath);
+        }
+        $bytesFreed += $bytes;
+        $deleted[] = [
+            'path' => $zipName,
+            'bytes' => $bytes,
+            'reason' => 'leftover deploy zip',
+        ];
+    }
+
+    $tmp = rtrim($root, '/') . '/storage/tmp';
+    if (is_dir($tmp)) {
+        $bytes = pinroll_directory_bytes($tmp);
+        if (!$dryRun) {
+            pinroll_remove_directory($tmp);
+        }
+        @mkdir($tmp, 0755, true);
+        if ($bytes > 0) {
+            $bytesFreed += $bytes;
+            $deleted[] = ['path' => 'storage/tmp/', 'bytes' => $bytes, 'reason' => 'temporary workspace'];
+        }
+    }
+
+    $pinion = rtrim($root, '/') . '/storage/pinion';
+    if (is_dir($pinion)) {
+        $bytes = pinroll_directory_bytes($pinion);
+        if ($bytes > 0) {
+            if (!$dryRun) {
+                pinroll_remove_directory($pinion);
+            }
+            $bytesFreed += $bytes;
+            $deleted[] = ['path' => 'storage/pinion/', 'bytes' => $bytes, 'reason' => 'temporary workspace'];
+        }
+    }
+
+    $staging = rtrim($root, '/') . '/storage/pinroll/staging';
+    if (is_dir($staging)) {
+        $bytes = pinroll_directory_bytes($staging);
+        if ($bytes > 0) {
+            if (!$dryRun) {
+                pinroll_remove_directory($staging);
+            }
+            $bytesFreed += $bytes;
+            $deleted[] = ['path' => 'storage/pinroll/staging/', 'bytes' => $bytes, 'reason' => 'temporary workspace'];
+        }
+    }
+
+    $legacy = rtrim($root, '/') . '/pinroll';
     if (is_dir($legacy) && !is_file($legacy . '/pinroll.config.php')) {
-        pinroll_remove_directory($legacy);
+        $bytes = pinroll_directory_bytes($legacy);
+        if (!$dryRun) {
+            pinroll_remove_directory($legacy);
+        }
+        if ($bytes > 0) {
+            $bytesFreed += $bytes;
+            $deleted[] = ['path' => 'pinroll/', 'bytes' => $bytes, 'reason' => 'legacy workspace'];
+        }
     }
 
-    return ['keep' => $keep, 'files_deleted' => $deleted];
+    return [
+        'dry_run' => $dryRun,
+        'keep' => $keep,
+        'stale_days' => $staleDays,
+        'deleted' => $deleted,
+        'kept' => $kept,
+        'bytes_freed' => $bytesFreed,
+        'files_deleted' => count($deleted),
+    ];
+}
+
+function pinroll_directory_bytes(string $dir): int
+{
+    if (!is_dir($dir)) {
+        return 0;
+    }
+
+    $total = 0;
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+    );
+
+    foreach ($iterator as $file) {
+        if ($file->isFile()) {
+            $total += (int) $file->getSize();
+        }
+    }
+
+    return $total;
 }
 
 /**

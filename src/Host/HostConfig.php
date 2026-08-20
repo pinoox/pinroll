@@ -101,7 +101,7 @@ final class HostConfig
     {
         $loaded = self::normalizeLoaded($loaded);
 
-        foreach (['keep', 'store', 'auto_clean', 'lang'] as $key) {
+        foreach (['keep', 'store', 'auto_clean', 'clean_before_deploy', 'stale_days', 'lang'] as $key) {
             if (!array_key_exists($key, $host) && array_key_exists($key, $loaded)) {
                 $host[$key] = $loaded[$key];
             }

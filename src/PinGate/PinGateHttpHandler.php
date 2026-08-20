@@ -219,6 +219,7 @@ final class PinGateHttpHandler
 
         return (new StorageCleaner($this->config))->clean([
             'keep' => $keep,
+            'stale_days' => isset($input['stale_days']) ? max(0, (int) $input['stale_days']) : max(0, (int) $this->config->get('stale_days', 7)),
             'dry_run' => $dryRun,
             'incoming' => !array_key_exists('incoming', $input) || !empty($input['incoming']),
             'tmp' => !array_key_exists('tmp', $input) || !empty($input['tmp']),
@@ -226,6 +227,8 @@ final class PinGateHttpHandler
             'sessions' => !array_key_exists('sessions', $input) || !empty($input['sessions']),
             'releases' => !array_key_exists('releases', $input) || !empty($input['releases']),
             'backups' => !array_key_exists('backups', $input) || !empty($input['backups']),
+            'deploy_zips' => !array_key_exists('deploy_zips', $input) || !empty($input['deploy_zips']),
+            'orphans' => !array_key_exists('orphans', $input) || !empty($input['orphans']),
         ]);
     }
 

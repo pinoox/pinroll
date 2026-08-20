@@ -28,6 +28,8 @@ return [
     'keep' => 3,
     'store' => 'remote',
     'auto_clean' => true,
+    'clean_before_deploy' => true,
+    'stale_days' => 7,
     'lang' => 'en',
 
     'provision' => [

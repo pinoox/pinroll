@@ -23,6 +23,10 @@ final class StorageCleaner
      *     releases?: bool,
      *     backups?: bool,
      *     pinx_export?: bool
+     *     pinion?: bool
+     *     stale_days?: int,
+     *     deploy_zips?: bool,
+     *     orphans?: bool
      * } $options
      * @return array{
      *     dry_run: bool,
@@ -36,6 +40,7 @@ final class StorageCleaner
     public function clean(array $options = []): array
     {
         $keep = max(0, (int) ($options['keep'] ?? 3));
+        $staleDays = max(0, (int) ($options['stale_days'] ?? 0));
         $dryRun = !empty($options['dry_run']);
         $scopes = [
             'incoming' => $options['incoming'] ?? true,
@@ -47,13 +52,18 @@ final class StorageCleaner
             'pinx_export' => $options['pinx_export'] ?? true,
             'pinion' => $options['pinion'] ?? true,
             'legacy' => $options['legacy'] ?? true,
+            'deploy_zips' => $options['deploy_zips'] ?? false,
+            'orphans' => $options['orphans'] ?? false,
         ];
 
         $deleted = [];
         $kept = [];
 
         if ($scopes['incoming']) {
-            $this->cleanIncoming($keep, $dryRun, $deleted, $kept);
+            $this->cleanIncoming($keep, $staleDays, $dryRun, $deleted, $kept);
+            if ($scopes['orphans']) {
+                $this->cleanIncomingOrphans($incoming = $this->config->storage((string) $this->config->get('incoming_path', 'pinroll/incoming')), $dryRun, $deleted);
+            }
         }
 
         if ($scopes['tmp']) {
@@ -101,6 +111,10 @@ final class StorageCleaner
             }
         }
 
+        if ($scopes['deploy_zips']) {
+            $this->cleanDeployZips($staleDays, $dryRun, $deleted);
+        }
+
         $bytes = array_sum(array_column($deleted, 'bytes'));
 
         return [
@@ -122,16 +136,19 @@ final class StorageCleaner
      * @param list<array{path: string, bytes: int, reason: string}> $deleted
      * @param list<string> $kept
      */
-    private function cleanIncoming(int $keep, bool $dryRun, array &$deleted, array &$kept): void
+    private function cleanIncoming(int $keep, int $staleDays, bool $dryRun, array &$deleted, array &$kept): void
     {
         $incoming = $this->config->storage((string) $this->config->get('incoming_path', 'pinroll/incoming'));
         $releases = IncomingRelease::list($incoming);
+        $staleCutoff = $staleDays > 0 ? time() - ($staleDays * 86400) : 0;
 
         foreach ($releases as $index => $release) {
             $path = $release['path'];
             $label = basename($path);
+            $mtime = (int) ($release['mtime'] ?? 0);
+            $isStale = $staleCutoff > 0 && $mtime > 0 && $mtime < $staleCutoff;
 
-            if ($index < $keep) {
+            if ($index < $keep && !$isStale) {
                 $kept[] = 'incoming/' . $label;
 
                 continue;
@@ -142,10 +159,88 @@ final class StorageCleaner
                 @unlink($path);
             }
 
+            $reason = $isStale
+                ? 'older than stale_days=' . $staleDays
+                : 'older than keep=' . $keep;
+
             $deleted[] = [
                 'path' => 'incoming/' . $label,
                 'bytes' => $bytes,
-                'reason' => 'older than keep=' . $keep,
+                'reason' => $reason,
+            ];
+        }
+    }
+
+    /**
+     * @param list<array{path: string, bytes: int, reason: string}> $deleted
+     */
+    private function cleanIncomingOrphans(string $incoming, bool $dryRun, array &$deleted): void
+    {
+        if (!is_dir($incoming)) {
+            return;
+        }
+
+        foreach (scandir($incoming) ?: [] as $name) {
+            if ($name === '.' || $name === '..') {
+                continue;
+            }
+
+            $path = $incoming . '/' . $name;
+            if (!is_file($path)) {
+                continue;
+            }
+
+            $lower = strtolower($name);
+            $isArchive = str_ends_with($lower, '.pinx')
+                || str_ends_with($lower, '.zip')
+                || str_ends_with($lower, '.tar')
+                || str_ends_with($lower, '.tar.gz');
+
+            if ($isArchive) {
+                continue;
+            }
+
+            $bytes = (int) filesize($path);
+            if (!$dryRun) {
+                @unlink($path);
+            }
+
+            $deleted[] = [
+                'path' => 'incoming/' . $name,
+                'bytes' => $bytes,
+                'reason' => 'orphan upload artifact',
+            ];
+        }
+    }
+
+    /**
+     * @param list<array{path: string, bytes: int, reason: string}> $deleted
+     */
+    private function cleanDeployZips(int $staleDays, bool $dryRun, array &$deleted): void
+    {
+        $root = rtrim(str_replace('\\', '/', $this->config->paths()->root()), '/');
+        $cutoff = $staleDays > 0 ? time() - ($staleDays * 86400) : time() - 86400;
+
+        foreach (['platform.zip', 'vendor.zip'] as $name) {
+            $path = $root . '/' . $name;
+            if (!is_file($path)) {
+                continue;
+            }
+
+            $mtime = (int) filemtime($path);
+            if ($mtime >= $cutoff) {
+                continue;
+            }
+
+            $bytes = (int) filesize($path);
+            if (!$dryRun) {
+                @unlink($path);
+            }
+
+            $deleted[] = [
+                'path' => $name,
+                'bytes' => $bytes,
+                'reason' => 'leftover deploy zip',
             ];
         }
     }

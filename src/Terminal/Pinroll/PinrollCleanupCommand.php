@@ -61,6 +61,7 @@ class PinrollCleanupCommand extends Terminal
 
             $options = [
                 'keep' => $keep,
+                'stale_days' => max(0, (int) Pinroll::config()->get('stale_days', 7)),
                 'dry_run' => $dryRun,
                 'incoming' => true,
                 'tmp' => !$incomingOnly,
@@ -68,6 +69,8 @@ class PinrollCleanupCommand extends Terminal
                 'sessions' => !$incomingOnly,
                 'releases' => !$incomingOnly,
                 'backups' => !$incomingOnly,
+                'deploy_zips' => !$incomingOnly,
+                'orphans' => true,
             ];
 
             $io->writeln('');
