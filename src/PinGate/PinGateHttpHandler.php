@@ -373,10 +373,15 @@ final class PinGateHttpHandler
             $gate = [];
         }
 
-        $hash = $this->auth->expectedHash($gate, $this->paths->root());
-        if ($hash !== '') {
-            $this->auth->verifyBearer($authorization, $hash);
+        $hashes = $this->auth->acceptedHashes($this->paths->root(), $gate);
+        if ($hashes === []) {
+            throw new PinrollException(
+                'No PinGate tokens configured. Upload storage/pinroll/tokens/{label}.php on the host, or run: php pinoox pinroll:token {label}',
+                503,
+            );
         }
+
+        $this->auth->verifyBearerForHost($authorization, $this->paths->root(), $gate);
     }
 
     private function detectBaseUrl(): string

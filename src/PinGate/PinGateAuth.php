@@ -33,6 +33,31 @@ final class PinGateAuth
     /**
      * @param array<string, mixed> $gate
      */
+    public function verifyBearerForHost(?string $authorization, string $root, array $gate = []): void
+    {
+        $token = $this->extractBearer($authorization);
+        if ($token === '') {
+            throw new PinrollException('Missing bearer token.', 401);
+        }
+
+        if (!GateTokenRegistry::verifyPlainToken($token, $root, $gate)) {
+            $this->registerFailure();
+            throw new PinrollException('Invalid token.', 401);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $gate
+     * @return list<string>
+     */
+    public function acceptedHashes(string $root, array $gate = []): array
+    {
+        return GateTokenRegistry::acceptedHashes($root, $gate);
+    }
+
+    /**
+     * @param array<string, mixed> $gate
+     */
     public function expectedHash(array $gate, string $root = ''): string
     {
         $envToken = $this->envToken($root);

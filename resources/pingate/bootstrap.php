@@ -219,28 +219,9 @@ function pinroll_handle_vendor_extract(string $root, array $gateConfig, array $i
     }
     $root = str_replace('\\', '/', $rootReal);
 
-    $expectedHash = pinroll_gate_token_hash($root, $gateConfig);
-    if ($expectedHash === '' || !preg_match('/^[a-f0-9]{64}$/', $expectedHash)) {
-        pinroll_gate_json_error(503, 'PinGate token_hash missing or invalid. Re-run pinroll:gate.');
-
+    if (!pinroll_vendor_gate_auth($root, $gateConfig, $authorization)) {
         return;
     }
-
-    if (pinroll_vendor_auth_blocked($root)) {
-        pinroll_gate_json_error(429, 'Too many failed attempts. Try again later.');
-
-        return;
-    }
-
-    $token = pinroll_extract_bearer($authorization);
-    if ($token === '' || !hash_equals($expectedHash, hash('sha256', $token))) {
-        pinroll_vendor_auth_failure($root);
-        pinroll_gate_json_error(401, 'Invalid token.');
-
-        return;
-    }
-
-    pinroll_vendor_auth_reset($root);
 
     if (!class_exists(ZipArchive::class)) {
         pinroll_gate_json_error(500, 'ZipArchive is not available on the host PHP.');
@@ -359,28 +340,9 @@ function pinroll_handle_platform_bootstrap(string $root, array $gateConfig, arra
     }
     $root = str_replace('\\', '/', $rootReal);
 
-    $expectedHash = pinroll_gate_token_hash($root, $gateConfig);
-    if ($expectedHash === '' || !preg_match('/^[a-f0-9]{64}$/', $expectedHash)) {
-        pinroll_gate_json_error(503, 'PinGate token_hash missing or invalid. Re-run pinroll:gate.');
-
+    if (!pinroll_vendor_gate_auth($root, $gateConfig, $authorization)) {
         return;
     }
-
-    if (pinroll_vendor_auth_blocked($root)) {
-        pinroll_gate_json_error(429, 'Too many failed attempts. Try again later.');
-
-        return;
-    }
-
-    $token = pinroll_extract_bearer($authorization);
-    if ($token === '' || !hash_equals($expectedHash, hash('sha256', $token))) {
-        pinroll_vendor_auth_failure($root);
-        pinroll_gate_json_error(401, 'Invalid token.');
-
-        return;
-    }
-
-    pinroll_vendor_auth_reset($root);
 
     $force = !empty($input['force']);
     if (!$force && is_file($root . '/index.php')) {
@@ -755,6 +717,39 @@ function pinroll_vendor_auth_reset(string $root): void
 }
 
 /**
+ * @param array<string, mixed> $gateConfig
+ */
+function pinroll_vendor_gate_auth(string $root, array $gateConfig, ?string $authorization): bool
+{
+    if (pinroll_gate_accepted_hashes($root, $gateConfig) === []) {
+        pinroll_gate_json_error(503, 'No PinGate tokens configured. Upload storage/pinroll/tokens/{label}.php on the host.');
+
+        return false;
+    }
+
+    if (pinroll_vendor_auth_blocked($root)) {
+        pinroll_gate_json_error(429, 'Too many failed attempts. Try again later.');
+
+        return false;
+    }
+
+    try {
+        pinroll_gate_verify_bearer($root, $gateConfig, $authorization);
+    } catch (RuntimeException $e) {
+        if ((int) ($e->getCode() ?: 401) === 401) {
+            pinroll_vendor_auth_failure($root);
+        }
+        pinroll_gate_json_error((int) ($e->getCode() ?: 401), $e->getMessage());
+
+        return false;
+    }
+
+    pinroll_vendor_auth_reset($root);
+
+    return true;
+}
+
+/**
  * @return true|string
  */
 function pinroll_vendor_zip_is_safe(ZipArchive $zip, string $root)
@@ -938,12 +933,97 @@ function pinroll_remove_directory_contents(string $real): void
 
 function pinroll_gate_token_hash(string $root, array $gateConfig): string
 {
+    $hashes = pinroll_gate_accepted_hashes($root, $gateConfig);
+
+    return $hashes[0] ?? '';
+}
+
+/**
+ * @param array<string, mixed> $gateConfig
+ * @return list<string>
+ */
+function pinroll_gate_accepted_hashes(string $root, array $gateConfig): array
+{
+    $hashes = pinroll_gate_registry_hashes($root);
+
     $envToken = pinroll_read_env_value($root, 'PINROLL_GATE_TOKEN');
     if ($envToken !== '' && preg_match('/^[a-f0-9]{64}$/', $envToken)) {
-        return hash('sha256', $envToken);
+        $hashes[] = hash('sha256', $envToken);
     }
 
-    return (string) ($gateConfig['token_hash'] ?? '');
+    $embedded = strtolower(trim((string) ($gateConfig['token_hash'] ?? '')));
+    if ($embedded !== '' && preg_match('/^[a-f0-9]{64}$/', $embedded) === 1) {
+        $hashes[] = $embedded;
+    }
+
+    return array_values(array_unique($hashes));
+}
+
+/**
+ * @return list<string>
+ */
+function pinroll_gate_registry_hashes(string $root): array
+{
+    $dir = rtrim($root, '/') . '/storage/pinroll/tokens';
+    if (!is_dir($dir)) {
+        return [];
+    }
+
+    $hashes = [];
+    foreach (scandir($dir) ?: [] as $name) {
+        if ($name === '.' || $name === '..' || !str_ends_with(strtolower($name), '.php')) {
+            continue;
+        }
+
+        $path = $dir . '/' . $name;
+        if (!is_file($path)) {
+            continue;
+        }
+
+        $data = require $path;
+        if (!is_array($data)) {
+            continue;
+        }
+
+        $hash = strtolower(trim((string) ($data['hash'] ?? '')));
+        if ($hash !== '' && preg_match('/^[a-f0-9]{64}$/', $hash) === 1) {
+            $hashes[] = $hash;
+        }
+    }
+
+    return array_values(array_unique($hashes));
+}
+
+/**
+ * @param array<string, mixed> $gateConfig
+ */
+function pinroll_gate_verify_bearer(string $root, array $gateConfig, ?string $authorization): void
+{
+    $hashes = pinroll_gate_accepted_hashes($root, $gateConfig);
+    if ($hashes === []) {
+        throw new RuntimeException(
+            'No PinGate tokens configured. Upload storage/pinroll/tokens/{label}.php on the host, or run: php pinoox pinroll:token {label}',
+            503,
+        );
+    }
+
+    $token = pinroll_extract_bearer($authorization);
+    if ($token === '') {
+        throw new RuntimeException('Missing bearer token.', 401);
+    }
+
+    if (!preg_match('/^[a-f0-9]{64}$/', $token)) {
+        throw new RuntimeException('Invalid token.', 401);
+    }
+
+    $candidate = hash('sha256', $token);
+    foreach ($hashes as $hash) {
+        if (hash_equals($hash, $candidate)) {
+            return;
+        }
+    }
+
+    throw new RuntimeException('Invalid token.', 401);
 }
 
 function pinroll_read_env_value(string $root, string $key): string
@@ -998,19 +1078,7 @@ function pinroll_incoming_dir(string $root): string
 
 function pinroll_assert_gate_auth(string $root, array $gateConfig, ?string $authorization): void
 {
-    $hash = pinroll_gate_token_hash($root, $gateConfig);
-    if ($hash === '' || !preg_match('/^[a-f0-9]{64}$/', $hash)) {
-        throw new RuntimeException('PinGate token_hash missing or invalid. Re-run pinroll:gate.', 503);
-    }
-
-    $token = pinroll_extract_bearer($authorization);
-    if ($token === '') {
-        throw new RuntimeException('Missing bearer token.', 401);
-    }
-
-    if (!hash_equals($hash, hash('sha256', $token))) {
-        throw new RuntimeException('Invalid token.', 401);
-    }
+    pinroll_gate_verify_bearer($root, $gateConfig, $authorization);
 }
 
 function pinroll_gate_try_auth(string $root, array $gateConfig, ?string $authorization): bool

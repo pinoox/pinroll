@@ -22,7 +22,7 @@ final class PinrollCommands
             \Pinoox\Terminal\Pinroll\PinrollPushCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollDeployCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollGateInitCommand::class,
-            \Pinoox\Terminal\Pinroll\PinrollGateTokenCommand::class,
+            \Pinoox\Terminal\Pinroll\PinrollTokenCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollVendorPackCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollPincoreCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollSyncCommand::class,
