@@ -40,6 +40,18 @@ function pinroll_pingate_run(string $root, array $gateConfig = []): void
         return;
     }
 
+    if ($method === 'POST' && $path === 'sync') {
+        $input = json_decode((string) file_get_contents('php://input'), true);
+        pinroll_handle_path_sync(
+            $root,
+            $gateConfig,
+            is_array($input) ? $input : [],
+            $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null),
+        );
+
+        return;
+    }
+
     $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null);
     if (!pinroll_gate_try_auth($root, $gateConfig, $auth)) {
         return;
@@ -322,6 +334,346 @@ function pinroll_handle_vendor_extract(string $root, array $gateConfig, array $i
             'autoload' => true,
         ],
     ], JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Extract a path-sync zip from storage/pinroll/incoming (pinroll:sync / pinroll:pincore).
+ * Runs without loading platform autoload so pincore itself can be replaced.
+ *
+ * @param array<string, mixed> $gateConfig
+ * @param array<string, mixed> $input
+ */
+function pinroll_handle_path_sync(string $root, array $gateConfig, array $input, ?string $authorization): void
+{
+    $rootReal = realpath($root);
+    if ($rootReal === false || !is_dir($rootReal)) {
+        pinroll_gate_json_error(500, 'Invalid platform root.');
+
+        return;
+    }
+    $root = str_replace('\\', '/', $rootReal);
+
+    if (!pinroll_vendor_gate_auth($root, $gateConfig, $authorization)) {
+        return;
+    }
+
+    $target = pinroll_sync_normalize_target((string) ($input['target'] ?? ''));
+    if ($target === '') {
+        pinroll_gate_json_error(400, 'Missing or invalid target path (e.g. vendor/pinoox/pincore).');
+
+        return;
+    }
+
+    $incoming = $root . '/storage/pinroll/incoming';
+    $deployId = trim((string) ($input['deploy_id'] ?? $input['filename'] ?? ''));
+    try {
+        $zipPath = pinroll_sync_resolve_zip($incoming, $deployId);
+    } catch (Throwable $e) {
+        pinroll_gate_json_error(404, $e->getMessage());
+
+        return;
+    }
+
+    $zipReal = realpath($zipPath);
+    if ($zipReal === false || !is_file($zipReal)) {
+        pinroll_gate_json_error(404, 'Sync zip not found in storage/pinroll/incoming.');
+
+        return;
+    }
+    $zipReal = str_replace('\\', '/', $zipReal);
+    $incomingReal = realpath($incoming);
+    if ($incomingReal === false || !str_starts_with($zipReal, str_replace('\\', '/', $incomingReal) . '/')) {
+        pinroll_gate_json_error(400, 'Sync zip must live under storage/pinroll/incoming.');
+
+        return;
+    }
+
+    if (!class_exists(ZipArchive::class)) {
+        pinroll_gate_json_error(500, 'ZipArchive is not available on the host.');
+
+        return;
+    }
+
+    $zip = new ZipArchive();
+    if ($zip->open($zipReal) !== true) {
+        pinroll_gate_json_error(500, 'Unable to open sync zip.');
+
+        return;
+    }
+
+    $inspect = pinroll_sync_zip_is_safe($zip, $target);
+    if ($inspect !== true) {
+        $zip->close();
+        pinroll_gate_json_error(400, is_string($inspect) ? $inspect : 'Unsafe sync zip rejected.');
+
+        return;
+    }
+
+    $targetDir = $root . '/' . $target;
+    $backupDir = $root . '/storage/tmp/sync-bak-' . bin2hex(random_bytes(4));
+    $hadTarget = is_dir($targetDir);
+    if ($hadTarget) {
+        if (!is_dir(dirname($backupDir)) && !@mkdir(dirname($backupDir), 0755, true) && !is_dir(dirname($backupDir))) {
+            $zip->close();
+            pinroll_gate_json_error(500, 'Unable to prepare backup directory.');
+
+            return;
+        }
+        if (!@rename($targetDir, $backupDir)) {
+            $zip->close();
+            pinroll_gate_json_error(500, 'Unable to move existing target aside before extract.');
+
+            return;
+        }
+    }
+
+    $ok = pinroll_sync_zip_extract_safe($zip, $root, $target);
+    $zip->close();
+
+    if ($ok !== true) {
+        if (is_dir($targetDir)) {
+            pinroll_remove_directory($targetDir);
+        }
+        if ($hadTarget && is_dir($backupDir)) {
+            @rename($backupDir, $targetDir);
+        }
+        pinroll_gate_json_error(500, is_string($ok) ? $ok : 'Path sync extract failed.');
+
+        return;
+    }
+
+    if ($hadTarget && is_dir($backupDir)) {
+        pinroll_remove_directory($backupDir);
+    }
+
+    $deleteZip = !array_key_exists('delete_zip', $input) || !empty($input['delete_zip']);
+    $deletedZip = false;
+    if ($deleteZip) {
+        $deletedZip = @unlink($zipReal);
+    }
+
+    pinroll_refresh_pinker_overrides($root);
+
+    header('Content-Type: application/json');
+    header('X-Content-Type-Options: nosniff');
+    echo json_encode([
+        'success' => true,
+        'data' => [
+            'target' => $target,
+            'zip' => basename($zipReal),
+            'deleted_zip' => (bool) $deletedZip,
+            'files' => pinroll_sync_count_files($targetDir),
+        ],
+    ], JSON_UNESCAPED_UNICODE);
+}
+
+function pinroll_sync_normalize_target(string $target): string
+{
+    $target = trim(str_replace('\\', '/', $target), '/');
+    if ($target === '' || $target === '.' || str_contains($target, '..') || str_starts_with($target, '/')) {
+        return '';
+    }
+
+    if (preg_match('#^[a-zA-Z]:#', $target) === 1) {
+        return '';
+    }
+
+    $blocked = ['pingate.php', 'storage/pinroll/tokens', 'storage/pinion'];
+    foreach ($blocked as $deny) {
+        if ($target === $deny || str_starts_with($target, $deny . '/')) {
+            return '';
+        }
+    }
+
+    return $target;
+}
+
+function pinroll_sync_resolve_zip(string $incoming, string $deployId): string
+{
+    $incoming = rtrim(str_replace('\\', '/', $incoming), '/');
+    if (!is_dir($incoming)) {
+        throw new RuntimeException('No sync archive found (incoming missing).');
+    }
+
+    $deployId = trim($deployId);
+    if ($deployId !== '') {
+        $candidates = [
+            $incoming . '/' . $deployId,
+            $incoming . '/' . $deployId . '.zip',
+            $incoming . '/sync-' . $deployId . '.zip',
+        ];
+        foreach ($candidates as $path) {
+            if (is_file($path)) {
+                return $path;
+            }
+        }
+
+        throw new RuntimeException('Sync zip not found for deploy_id: ' . $deployId);
+    }
+
+    $latest = null;
+    $latestMtime = 0;
+    foreach (scandir($incoming) ?: [] as $name) {
+        if ($name === '.' || $name === '..') {
+            continue;
+        }
+        $lower = strtolower($name);
+        if (!str_starts_with($lower, 'sync-') || !str_ends_with($lower, '.zip')) {
+            continue;
+        }
+        $path = $incoming . '/' . $name;
+        if (!is_file($path)) {
+            continue;
+        }
+        $mtime = (int) filemtime($path);
+        if ($mtime >= $latestMtime) {
+            $latestMtime = $mtime;
+            $latest = $path;
+        }
+    }
+
+    if ($latest === null) {
+        throw new RuntimeException('No sync-*.zip found in storage/pinroll/incoming.');
+    }
+
+    return $latest;
+}
+
+/**
+ * @return true|string
+ */
+function pinroll_sync_zip_is_safe(ZipArchive $zip, string $target)
+{
+    $maxFiles = 80000;
+    $maxUncompressed = 500 * 1024 * 1024;
+    $count = $zip->numFiles;
+    $prefix = $target . '/';
+
+    if ($count < 1 || $count > $maxFiles) {
+        return 'Sync zip has an invalid entry count.';
+    }
+
+    $totalUncompressed = 0;
+    $hasFile = false;
+
+    for ($i = 0; $i < $count; $i++) {
+        $stat = $zip->statIndex($i);
+        if (!is_array($stat)) {
+            return 'Unable to read zip entry metadata.';
+        }
+
+        $name = str_replace('\\', '/', (string) ($stat['name'] ?? ''));
+        if ($name === '' || str_contains($name, "\0")) {
+            return 'Zip entry name is invalid.';
+        }
+
+        if ($name[0] === '/' || preg_match('#^[a-zA-Z]:#', $name) === 1 || str_contains($name, '..')) {
+            return 'Zip entry path traversal rejected: ' . $name;
+        }
+
+        if ($name !== $target && $name !== $prefix && !str_starts_with($name, $prefix)) {
+            return 'Zip may only contain paths under ' . $target . '/. Rejected: ' . $name;
+        }
+
+        $attrs = (int) ($stat['external_attr'] ?? 0);
+        $type = ($attrs >> 16) & 0xF000;
+        if ($type === 0xA000) {
+            return 'Symlink entries are not allowed in sync zip.';
+        }
+
+        $size = (int) ($stat['size'] ?? 0);
+        if ($size < 0) {
+            return 'Invalid uncompressed size in zip.';
+        }
+
+        $totalUncompressed += $size;
+        if ($totalUncompressed > $maxUncompressed) {
+            return 'Sync zip uncompressed size exceeds limit.';
+        }
+
+        if (!str_ends_with($name, '/')) {
+            $hasFile = true;
+        }
+    }
+
+    if (!$hasFile) {
+        return 'Sync zip has no files under ' . $target . '/.';
+    }
+
+    return true;
+}
+
+/**
+ * @return true|string
+ */
+function pinroll_sync_zip_extract_safe(ZipArchive $zip, string $root, string $target)
+{
+    $root = rtrim(str_replace('\\', '/', $root), '/');
+    $prefix = $target . '/';
+    $count = $zip->numFiles;
+
+    for ($i = 0; $i < $count; $i++) {
+        $stat = $zip->statIndex($i);
+        if (!is_array($stat)) {
+            return 'Unable to read zip entry during extract.';
+        }
+
+        $name = str_replace('\\', '/', (string) ($stat['name'] ?? ''));
+        if ($name === '' || str_ends_with($name, '/')) {
+            $dir = $root . '/' . rtrim($name, '/');
+            if ($name !== '' && !is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+                return 'Unable to create directory for zip entry.';
+            }
+
+            continue;
+        }
+
+        if ($name !== $target && !str_starts_with($name, $prefix)) {
+            return 'Refusing extract outside target: ' . $name;
+        }
+
+        $dest = $root . '/' . $name;
+        $normalized = str_replace('\\', '/', $dest);
+        $allowed = $root . '/' . $target;
+        if ($normalized !== $allowed && !str_starts_with($normalized, $allowed . '/')) {
+            return 'Refusing extract outside target root: ' . $name;
+        }
+
+        $parent = dirname($dest);
+        if (!is_dir($parent) && !@mkdir($parent, 0755, true) && !is_dir($parent)) {
+            return 'Unable to create parent directory for zip entry.';
+        }
+
+        $contents = $zip->getFromIndex($i);
+        if ($contents === false) {
+            return 'Unable to read zip entry during extract.';
+        }
+
+        if (@file_put_contents($dest, $contents) === false) {
+            return 'Unable to write extracted file.';
+        }
+    }
+
+    return true;
+}
+
+function pinroll_sync_count_files(string $dir): int
+{
+    if (!is_dir($dir)) {
+        return 0;
+    }
+
+    $count = 0;
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+    );
+    foreach ($iterator as $file) {
+        if ($file->isFile()) {
+            $count++;
+        }
+    }
+
+    return $count;
 }
 
 /**

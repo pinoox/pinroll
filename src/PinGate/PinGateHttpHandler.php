@@ -48,6 +48,7 @@ final class PinGateHttpHandler
             $method === 'POST' && $path === 'push/upload' => $this->pinion->upload($input, $input['chunk'] ?? null),
             $method === 'POST' && $path === 'push/complete' => $this->handleComplete($input),
             $method === 'POST' && ($path === 'install' || $path === 'apply') => $this->handleInstall($input),
+            $method === 'POST' && $path === 'sync' => $this->handlePathSync($input),
             $method === 'GET' && $path === 'status' => $this->handleStatus($input),
             $method === 'GET' && $path === 'incoming' => $this->handleIncoming(),
             $method === 'POST' && $path === 'rollback' => $this->handleRollback($input),
@@ -96,6 +97,15 @@ final class PinGateHttpHandler
     private function handleInstall(array $input): array
     {
         return $this->handleApply($input);
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    private function handlePathSync(array $input): array
+    {
+        return (new \Pinoox\Pinroll\Console\SyncPathExtractor())->extract($this->paths->root(), $input);
     }
 
     /**

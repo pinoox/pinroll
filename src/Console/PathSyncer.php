@@ -3,31 +3,32 @@
 namespace Pinoox\Pinroll\Console;
 
 use Pinoox\Pinroll\Exception\PinrollException;
+use Pinoox\Pinroll\Host\HostGate;
 use Pinoox\Pinroll\Pinroll;
-use Pinoox\Pinroll\Support\HostDir;
+use Pinoox\Pinroll\Release\ReleaseManifest;
+use Pinoox\Pinroll\Rollout\RolloutSession;
 use Pinoox\Pinroll\Support\PushProgress;
 use Pinoox\Pinroll\Support\SyncPathValidator;
-use Pinoox\Pinroll\Transport\FtpUploader;
+use Pinoox\Pinroll\Target\PinGateClient;
+use Pinoox\Pinroll\Transport\FtpTransport;
+use Pinoox\Pinroll\Transport\PinionTransport;
+use Pinoox\Pinroll\Transport\SshTransport;
 
 /**
- * Mirror a local directory to the host over FTP (relative to deploy root).
+ * Zip a local folder, upload via ftp/ssh/pinion, extract on host through PinGate POST ?route=sync.
  */
 final class PathSyncer
 {
-    /** @var list<string> */
-    private const SKIP_DIR_NAMES = [
-        '.git',
-        'node_modules',
-        '.github',
-        '.idea',
-    ];
-
     /**
      * @return array{
      *     host: string,
      *     local: string,
      *     remote: string,
-     *     files: int
+     *     files: int,
+     *     transport?: string,
+     *     deploy_id?: string,
+     *     zip?: string,
+     *     extract?: array<string, mixed>
      * }
      */
     public function sync(
@@ -36,132 +37,135 @@ final class PathSyncer
         string $remoteRelative,
         ?string $projectRoot = null,
         bool $dryRun = false,
+        ?string $via = null,
     ): array {
         $root = $projectRoot ?? Pinroll::paths()->root();
         $local = SyncPathValidator::localDir($localPath, $root);
         $remoteRelative = SyncPathValidator::remoteRelative($remoteRelative);
 
         $raw = Pinroll::hosts()->raw($hostName);
-        $resolved = Pinroll::hosts()->resolve($hostName);
+        $resolved = Pinroll::hosts()->resolve($hostName, $via);
         $transport = (string) ($resolved['transport'] ?? 'ftp');
 
-        if ($transport !== 'ftp') {
-            throw new PinrollException(
-                'pinroll:sync currently supports FTP hosts only (via=ftp). Host transport: ' . $transport,
-            );
-        }
-
-        $deployRoot = HostDir::deployRoot(HostDir::fromTarget($resolved));
-        $remoteBase = $deployRoot === '.'
-            ? $remoteRelative
-            : rtrim($deployRoot, '/') . '/' . $remoteRelative;
-
         if ($dryRun) {
-            $files = $this->countLocalFiles($local);
+            $files = count((new PathArchiveBuilder())->collectFiles($local));
 
             return [
                 'host' => $hostName,
                 'local' => $local,
-                'remote' => $remoteBase,
+                'remote' => $remoteRelative,
                 'files' => $files,
+                'transport' => $transport,
             ];
         }
 
         GateMaintainer::ensureBeforeDeploy($hostName, $resolved, $raw);
 
-        $uploader = new FtpUploader();
-        $connection = $uploader->connect(
-            (string) ($resolved['host'] ?? ''),
-            (string) ($resolved['user'] ?? ''),
-            (string) ($resolved['password'] ?? ''),
-        );
+        $gate = HostGate::credentials($raw);
+        $gateUrl = $gate['url'] !== '' ? $gate['url'] : (string) ($resolved['gate_url'] ?? '');
+        $token = $gate['token'] !== '' ? $gate['token'] : (string) ($resolved['token'] ?? '');
+        if ($gateUrl === '' || $token === '') {
+            throw new PinrollException(
+                'PinGate URL/token missing. Run php pinoox pinroll:kit or pinroll:connect first.',
+            );
+        }
+
+        PushProgress::arrow('Packing ' . basename($local) . ' → ' . $remoteRelative);
+        $archive = (new PathArchiveBuilder())->build($local, $remoteRelative, $root);
+        $zipPath = $archive['zip'];
+        $deployId = $archive['deploy_id'];
 
         try {
-            PushProgress::arrow('FTP sync ' . basename($local) . ' → ' . $remoteBase);
-            $files = $this->uploadFiltered($uploader, $connection, $local, $remoteBase);
-            PushProgress::detail('Synced ' . $files . ' file(s)');
+            PushProgress::arrow('Upload sync zip via ' . $transport . ' (' . $this->formatBytes($archive['bytes']) . ')');
+            $this->uploadArchive($resolved, $zipPath, $deployId, $transport);
+
+            PushProgress::arrow('PinGate extract → ' . $remoteRelative);
+            $extract = PinGateClient::extractSync($gateUrl, $token, [
+                'deploy_id' => $deployId,
+                'target' => $remoteRelative,
+                'delete_zip' => true,
+            ]);
         } finally {
-            if (is_resource($connection)) {
-                @ftp_close($connection);
+            if (is_file($zipPath)) {
+                @unlink($zipPath);
             }
         }
+
+        PushProgress::detail('Synced ' . $archive['files'] . ' file(s) via zip');
 
         return [
             'host' => $hostName,
             'local' => $local,
-            'remote' => $remoteBase,
-            'files' => $files,
+            'remote' => $remoteRelative,
+            'files' => $archive['files'],
+            'transport' => $transport,
+            'deploy_id' => $deployId,
+            'zip' => 'storage/pinroll/incoming/sync-' . $deployId . '.zip',
+            'extract' => $extract,
         ];
     }
 
     /**
-     * @param resource $connection
+     * @param array<string, mixed> $resolved
      */
-    private function uploadFiltered(FtpUploader $uploader, $connection, string $localDir, string $remoteDir): int
+    private function uploadArchive(array $resolved, string $zipPath, string $deployId, string $transport): void
     {
-        $localDir = rtrim(str_replace('\\', '/', $localDir), '/');
-        $remoteDir = rtrim(str_replace('\\', '/', $remoteDir), '/');
-        $files = $this->collectFiles($localDir);
-        $total = count($files);
+        $manifest = ReleaseManifest::fromArray([
+            'id' => $deployId,
+            'deploy_id' => $deployId,
+            'checksum' => hash_file('sha256', $zipPath) ?: '',
+            'deploy' => ['scope' => 'sync'],
+        ]);
+        $session = RolloutSession::create(Pinroll::config(), (string) ($resolved['name'] ?? 'production'), 'path-sync', $transport);
 
-        if ($total === 0) {
-            throw new PinrollException('Nothing to sync — local directory has no files: ' . $localDir);
-        }
+        $driver = match ($transport) {
+            'ssh' => new SshTransport(Pinroll::config()),
+            'pinion' => new PinionTransport(Pinroll::config()),
+            'local' => null,
+            default => new FtpTransport(Pinroll::config()),
+        };
 
-        $uploader->mkdirRecursive($connection, $remoteDir);
-
-        $current = 0;
-        foreach ($files as $relative) {
-            $current++;
-            $local = $localDir . '/' . $relative;
-            $remote = $remoteDir . '/' . $relative;
-            $uploader->uploadFile($connection, $local, $remote);
-            PushProgress::progress($current, $total, 'sync');
-        }
-
-        return $total;
-    }
-
-    private function countLocalFiles(string $localDir): int
-    {
-        return count($this->collectFiles($localDir));
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function collectFiles(string $localDir): array
-    {
-        $files = [];
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($localDir, \FilesystemIterator::SKIP_DOTS),
-        );
-
-        foreach ($iterator as $file) {
-            if (!$file->isFile()) {
-                continue;
+        if ($transport === 'local') {
+            $incoming = rtrim(Pinroll::paths()->root(), '/') . '/storage/pinroll/incoming';
+            if (!is_dir($incoming) && !mkdir($incoming, 0755, true) && !is_dir($incoming)) {
+                throw new PinrollException('Unable to create incoming directory.');
+            }
+            $dest = $incoming . '/sync-' . $deployId . '.zip';
+            if (!@copy($zipPath, $dest)) {
+                throw new PinrollException('Unable to copy sync zip into local incoming.');
             }
 
-            $relative = str_replace('\\', '/', substr($file->getPathname(), strlen($localDir) + 1));
-            if ($this->shouldSkipRelative($relative)) {
-                continue;
-            }
-
-            $files[] = $relative;
+            return;
         }
 
-        return $files;
+        if ($driver === null) {
+            throw new PinrollException('Unknown transport: ' . $transport);
+        }
+
+        // Transports store basename(archive); ensure remote name is sync-{id}.zip
+        $named = dirname($zipPath) . '/sync-' . $deployId . '.zip';
+        if ($named !== $zipPath) {
+            if (!@rename($zipPath, $named) && !@copy($zipPath, $named)) {
+                throw new PinrollException('Unable to stage sync zip for upload.');
+            }
+            if (is_file($zipPath) && $zipPath !== $named) {
+                @unlink($zipPath);
+            }
+            $zipPath = $named;
+        }
+
+        $driver->send($zipPath, $manifest, $resolved, $session);
     }
 
-    private function shouldSkipRelative(string $relative): bool
+    private function formatBytes(int $bytes): string
     {
-        $parts = explode('/', str_replace('\\', '/', $relative));
-        foreach ($parts as $part) {
-            if (in_array($part, self::SKIP_DIR_NAMES, true)) {
-                return true;
-            }
+        if ($bytes < 1024) {
+            return $bytes . ' B';
+        }
+        if ($bytes < 1024 * 1024) {
+            return round($bytes / 1024, 1) . ' KB';
         }
 
-        return false;
+        return round($bytes / (1024 * 1024), 1) . ' MB';
     }
 }

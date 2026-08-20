@@ -106,6 +106,8 @@ php pinoox pinroll:rollback
 php pinoox pinroll:cleanup
 php pinoox pinroll:gate
 php pinoox pinroll:gate --kit
+php pinoox pinroll:pincore
+php pinoox pinroll:sync --from=./pincore --to=vendor/pinoox/pincore
 php pinoox pinroll:vendor
 php pinoox pinroll:vendor --push
 php pinoox pinroll:pull --server=https://releases.example.com
@@ -128,6 +130,8 @@ php pinoox pinroll:pull --server=https://releases.example.com
 - `pinroll:rollback` — switch the host back to a previous release
 - `pinroll:cleanup` — prune local/remote archives by `keep` / `store`
 - `pinroll:gate` — rebuild/upload a single `pingate.php` (`--kit` / `-z` zip; `--no-upload` keep local)
+- `pinroll:pincore` — zip + upload `vendor/pinoox/pincore`, extract via PinGate (`ftp` / `ssh` / `pinion`)
+- `pinroll:sync` — zip any local folder (`--from`, `--to`), upload, extract via PinGate
 - `pinroll:vendor` — production `vendor.zip` via PlatformComposer (`--push` FTP + PinGate `POST ?route=vendor`)
 - `pinroll:pull` — pull newer manifest from a release server (alias: `pinroll:poll`)
 

@@ -22,7 +22,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
     name: 'pinroll:pincore',
-    description: 'Sync only pinoox/pincore to the host (FTP mirror under vendor/pinoox/pincore)',
+    description: 'Zip + upload pincore, extract on host via PinGate (ftp / ssh / pinion)',
     aliases: ['pinroll:sync:pincore', 'pinroll:update:pincore'],
 )]
 class PinrollPincoreCommand extends Terminal
@@ -34,6 +34,7 @@ class PinrollPincoreCommand extends Terminal
             ->addOption('from', 'f', InputOption::VALUE_REQUIRED, 'Local pincore directory (default: vendor/pinoox/pincore or pincore/)')
             ->addOption('to', 't', InputOption::VALUE_REQUIRED, 'Remote path (default: vendor/pinoox/pincore)')
             ->addOption('host', null, InputOption::VALUE_REQUIRED, 'Host override')
+            ->addOption('via', null, InputOption::VALUE_REQUIRED, 'Transport override: ftp, ssh, pinion')
             ->addOption('setup', null, InputOption::VALUE_NONE, 'Run platform migrate after sync (pinroll:setup --migrate)')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Preview file count without uploading');
     }
@@ -51,6 +52,7 @@ class PinrollPincoreCommand extends Terminal
             $hostName = PinrollInput::hostName($input);
             $fromOption = trim((string) ($input->getOption('from') ?: ''));
             $toOption = trim((string) ($input->getOption('to') ?: ''));
+            $via = trim((string) ($input->getOption('via') ?: ''));
             $dryRun = (bool) $input->getOption('dry-run');
 
             $local = PincorePaths::resolveLocal((string) $root, $fromOption !== '' ? $fromOption : null);
@@ -60,11 +62,22 @@ class PinrollPincoreCommand extends Terminal
             $io->definitionList(
                 ['Local' => '<comment>' . PinrollCli::relPath($local) . '</comment>'],
                 ['Remote' => '<comment>' . $remote . '</comment>'],
+                ['Mode' => '<comment>zip → upload → PinGate extract</comment>'],
             );
 
-            $result = (new PathSyncer())->sync($hostName, $local, $remote, (string) $root, $dryRun);
+            $result = (new PathSyncer())->sync(
+                $hostName,
+                $local,
+                $remote,
+                (string) $root,
+                $dryRun,
+                $via !== '' ? $via : null,
+            );
 
-            $io->writeln('  <fg=gray>Files</>   <info>' . $result['files'] . '</info>');
+            $io->writeln('  <fg=gray>Files</>      <info>' . $result['files'] . '</info>');
+            if (!empty($result['transport'])) {
+                $io->writeln('  <fg=gray>Transport</>  <comment>' . $result['transport'] . '</comment>');
+            }
 
             if ($dryRun) {
                 $io->success('Dry-run complete — re-run without --dry-run to upload pincore.');
@@ -72,7 +85,8 @@ class PinrollPincoreCommand extends Terminal
                 return Command::SUCCESS;
             }
 
-            $io->success('Pincore synced to host.');
+            $io->success('Pincore synced to host (zip + extract).');
+            $io->writeln('  <fg=gray>Tip:</> host needs updated pingate.php — deploy auto-syncs it; or run <comment>pinroll:gate</comment>.');
 
             if ($input->getOption('setup')) {
                 $io->section('Platform migrate');

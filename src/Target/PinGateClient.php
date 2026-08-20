@@ -133,6 +133,28 @@ final class PinGateClient
     }
 
     /**
+     * Extract a path-sync zip from storage/pinroll/incoming (POST /sync).
+     *
+     * @param array{deploy_id?: string, target: string, delete_zip?: bool} $options
+     * @return array<string, mixed>
+     */
+    public static function extractSync(string $gateUrlBase, string $token, array $options = []): array
+    {
+        $response = self::request('POST', GateUrl::route($gateUrlBase, 'sync'), $token, $options, 600);
+
+        if (!($response['success'] ?? false)) {
+            throw new PinrollException((string) ($response['error'] ?? 'PinGate path sync extract failed.'));
+        }
+
+        $data = $response['data'] ?? [];
+        if (!is_array($data)) {
+            throw new PinrollException('PinGate sync extract returned invalid response.');
+        }
+
+        return $data;
+    }
+
+    /**
      * Extract a previously uploaded platform.zip on the host (POST /bootstrap).
      *
      * @param array{force?: bool} $options

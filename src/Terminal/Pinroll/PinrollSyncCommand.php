@@ -20,7 +20,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
     name: 'pinroll:sync',
-    description: 'FTP-sync a local folder to a path on the host (relative to deploy root)',
+    description: 'Zip a local folder, upload (ftp/ssh/pinion), extract on host via PinGate',
     aliases: ['pinroll:push:path', 'pinroll:path:sync'],
 )]
 class PinrollSyncCommand extends Terminal
@@ -32,6 +32,7 @@ class PinrollSyncCommand extends Terminal
             ->addOption('from', 'f', InputOption::VALUE_REQUIRED, 'Local directory to upload')
             ->addOption('to', 't', InputOption::VALUE_REQUIRED, 'Remote path relative to deploy root (e.g. vendor/pinoox/pincore)')
             ->addOption('host', null, InputOption::VALUE_REQUIRED, 'Host override')
+            ->addOption('via', null, InputOption::VALUE_REQUIRED, 'Transport override: ftp, ssh, pinion')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show what would be uploaded without sending files');
     }
 
@@ -56,20 +57,31 @@ class PinrollSyncCommand extends Terminal
             Pinroll::boot(new NativePathResolver((string) $root));
 
             $hostName = PinrollInput::hostName($input);
+            $via = trim((string) ($input->getOption('via') ?: ''));
             $dryRun = (bool) $input->getOption('dry-run');
 
             $io->block('pinroll:sync  →  ' . $hostName, 'INFO', 'fg=black;bg=cyan', ' ', true);
 
-            $result = (new PathSyncer())->sync($hostName, $from, $to, (string) $root, $dryRun);
+            $result = (new PathSyncer())->sync(
+                $hostName,
+                $from,
+                $to,
+                (string) $root,
+                $dryRun,
+                $via !== '' ? $via : null,
+            );
 
             $io->definitionList(
-                ['Mode' => $dryRun ? '<comment>dry-run</comment>' : '<fg=green>upload</>'],
+                ['Mode' => $dryRun ? '<comment>dry-run</comment>' : '<fg=green>zip → upload → extract</>'],
                 ['Local' => '<comment>' . PinrollCli::relPath($result['local']) . '</comment>'],
                 ['Remote' => '<comment>' . $result['remote'] . '</comment>'],
                 ['Files' => '<info>' . $result['files'] . '</info>'],
+                ['Transport' => '<comment>' . ($result['transport'] ?? '—') . '</comment>'],
             );
 
-            $io->success($dryRun ? 'Dry-run complete — re-run without --dry-run to upload.' : 'Path synced to host.');
+            $io->success($dryRun
+                ? 'Dry-run complete — re-run without --dry-run to upload.'
+                : 'Path synced to host (zip + PinGate extract).');
 
             return Command::SUCCESS;
         } catch (\Throwable $e) {
