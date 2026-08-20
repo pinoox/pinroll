@@ -34,13 +34,16 @@ final class ReleaseBuilder
         $steps = $customBuild !== null
             ? [['type' => 'custom', 'command' => $customBuild]]
             : $bundle->buildSteps();
-        PushProgress::detail('Building bundle "' . $bundle->name() . '" (' . count($steps) . ' step(s))…');
+        $stepCount = count($steps);
+        PushProgress::detail('Building bundle "' . $bundle->name() . '" (' . $stepCount . ' step(s))…');
 
         $artifacts = [];
         foreach ($steps as $index => $step) {
             $label = (string) ($step['command'] ?? $step['type'] ?? 'step');
-            PushProgress::detail('Build step ' . ($index + 1) . '/' . count($steps) . ': ' . $label);
+            PushProgress::detail('Build step ' . ($index + 1) . '/' . $stepCount . ': ' . $label);
             $artifacts[] = $this->runBuildStep($step, $outputDir, $package);
+            PushProgress::endBar();
+            PushProgress::progress($index + 1, max(1, $stepCount), 'build steps');
         }
 
         PushProgress::detail('Packaging release archive…');
@@ -256,7 +259,8 @@ final class ReleaseBuilder
                 $lastActivity = time();
             }
 
-            usleep(50_000);
+            PushProgress::pulse('building… ' . $command);
+            usleep(80_000);
         }
 
         fclose($pipes[1]);

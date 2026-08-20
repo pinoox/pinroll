@@ -14,17 +14,35 @@ final class PushProgress
     /** @var (\Closure(int, int, string): void)|null */
     private static ?\Closure $progressHandler = null;
 
+    /** @var (\Closure(string): void)|null */
+    private static ?\Closure $pulseHandler = null;
+
+    /** @var (\Closure(): void)|null */
+    private static ?\Closure $endHandler = null;
+
     private static bool $verbose = false;
+
+    private static int $lastPulseTenths = 0;
 
     /**
      * @param (\Closure(string, string=): void)|null $handler
      * @param (\Closure(int, int, string): void)|null $progressHandler (current, total, label)
+     * @param (\Closure(string): void)|null $pulseHandler
+     * @param (\Closure(): void)|null $endHandler
      */
-    public static function bind(?\Closure $handler, bool $verbose = false, ?\Closure $progressHandler = null): void
-    {
+    public static function bind(
+        ?\Closure $handler,
+        bool $verbose = false,
+        ?\Closure $progressHandler = null,
+        ?\Closure $pulseHandler = null,
+        ?\Closure $endHandler = null,
+    ): void {
         self::$handler = $handler;
         self::$verbose = $verbose;
         self::$progressHandler = $progressHandler;
+        self::$pulseHandler = $pulseHandler;
+        self::$endHandler = $endHandler;
+        self::$lastPulseTenths = 0;
     }
 
     public static function log(string $message, string $style = PushConsole::STYLE_DEFAULT): void
@@ -93,6 +111,30 @@ final class PushProgress
         if ($current === 1 || $current === $total || $current % 25 === 0) {
             $suffix = $label !== '' ? ' — ' . $label : '';
             self::emit($current . '/' . $total . $suffix, PushConsole::STYLE_MUTED);
+        }
+    }
+
+    public static function pulse(string $label): void
+    {
+        $tenths = (int) floor(microtime(true) * 8);
+        if ($tenths === self::$lastPulseTenths) {
+            return;
+        }
+        self::$lastPulseTenths = $tenths;
+
+        if (self::$pulseHandler !== null) {
+            (self::$pulseHandler)($label);
+
+            return;
+        }
+
+        self::detail($label);
+    }
+
+    public static function endBar(): void
+    {
+        if (self::$endHandler !== null) {
+            (self::$endHandler)();
         }
     }
 

@@ -36,7 +36,7 @@ final class PinionTransport implements TransportInterface
         $chunkSize = (int) $this->config->get('chunk_size', 5 * 1024 * 1024);
         $filename = basename($archivePath);
 
-        PushProgress::log('Uploading ' . $filename . ' (' . $this->formatBytes($size) . ') via Pinion…');
+        PushProgress::arrow($filename . ' (' . $this->formatBytes($size) . ') via Pinion');
 
         $init = $this->post($baseUrl . '/push/init', [
             'filename' => $filename,
@@ -69,8 +69,7 @@ final class PinionTransport implements TransportInterface
             $this->uploadChunk($baseUrl, $uploadId, $index, $chunk, $token);
             $index++;
             $uploaded = min($size, $index * $chunkSize);
-            $percent = $size > 0 ? (int) round(($uploaded / $size) * 100) : 100;
-            PushProgress::log('Uploaded chunk ' . $index . ' (' . $percent . '%)');
+            PushProgress::progress($uploaded, max(1, $size), $filename);
             $session->addStep('transport', 'running', "Uploaded chunk {$index}");
         }
 

@@ -34,3 +34,9 @@ test('pincore paths resolves project pincore fork', function () {
 
     expect(str_ends_with($resolved, '/pincore'))->toBeTrue();
 });
+
+test('progress bar formats byte sizes', function () {
+    expect(Pinoox\Pinroll\Support\PushProgressBar::bytes(500))->toBe('500 B')
+        ->and(Pinoox\Pinroll\Support\PushProgressBar::bytes(2048))->toBe('2 KB')
+        ->and(Pinoox\Pinroll\Support\PushProgressBar::bytes(2 * 1024 * 1024))->toBe('2 MB');
+});

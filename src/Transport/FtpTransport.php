@@ -37,55 +37,45 @@ final class FtpTransport implements TransportInterface
             throw new PinrollException('FTP extension is not available.');
         }
 
-        $connection = @ftp_connect($host);
-        if ($connection === false) {
-            throw new PinrollException('FTP connection failed.');
-        }
+        $uploader = new FtpUploader();
+        $connection = $uploader->connect($host, $user, $password);
 
-        if (!@ftp_login($connection, $user, $password)) {
-            ftp_close($connection);
-            throw new PinrollException('FTP login failed.');
-        }
+        try {
+            $uploader->mkdirRecursive($connection, $remoteDir);
 
-        ftp_pasv($connection, true);
-        $this->ftpMkdirRecursive($connection, $remoteDir);
+            [$localFile, $remoteName] = $this->resolveUploadPayload($archivePath, $manifest);
+            $remoteFile = rtrim($remoteDir, '/') . '/' . $remoteName;
+            $size = is_file($localFile) ? (int) filesize($localFile) : 0;
+            PushProgress::arrow($remoteName . ($size > 0 ? ' (' . $this->formatBytes($size) . ')' : ''));
 
-        // Upload .pinx (zip) for PinGate apply — not the .tar wrapper (PinxInstaller cannot open tar).
-        [$localFile, $remoteName] = $this->resolveUploadPayload($archivePath, $manifest);
-        $remoteFile = rtrim($remoteDir, '/') . '/' . $remoteName;
-        $size = is_file($localFile) ? (int) filesize($localFile) : 0;
-        PushProgress::arrow($remoteName . ($size > 0 ? ' (' . $this->formatBytes($size) . ')' : ''));
+            $uploader->uploadFile($connection, $localFile, $remoteFile, $remoteName);
 
-        if (!@ftp_put($connection, $remoteFile, $localFile, FTP_BINARY)) {
-            ftp_close($connection);
-            throw new PinrollException('FTP upload failed — check connection and remote path.');
-        }
-
-        $remoteSize = @ftp_size($connection, $remoteFile);
-        if ($remoteSize > 0 && $size > 0 && (int) $remoteSize !== $size) {
-            ftp_close($connection);
-            throw new PinrollException(
-                'FTP upload size mismatch (local ' . $size . ' vs remote ' . $remoteSize . '). Use binary mode / retry.',
-            );
-        }
-
-        $session->addStep('transport', 'ok', 'Archive uploaded via FTP to ' . $remoteFile);
-
-        if (($manifest->deploy()['vendor'] ?? false) === true) {
-            $vendorLocal = rtrim($this->config->paths()->root(), '/') . '/vendor';
-            if (!is_dir($vendorLocal)) {
-                ftp_close($connection);
-                throw new PinrollException('vendor/ not found locally — run composer install first.');
+            $remoteSize = @ftp_size($connection, $remoteFile);
+            if ($remoteSize > 0 && $size > 0 && (int) $remoteSize !== $size) {
+                throw new PinrollException(
+                    'FTP upload size mismatch (local ' . $size . ' vs remote ' . $remoteSize . '). Use binary mode / retry.',
+                );
             }
 
-            $deployRoot = HostDir::deployRoot(HostDir::fromTarget($target));
-            $remoteVendor = ($deployRoot === '.' ? '' : $deployRoot . '/') . 'vendor';
-            PushProgress::arrow('vendor/');
-            $count = (new FtpUploader())->uploadDirectory($connection, $vendorLocal, $remoteVendor, 'vendor');
-            $session->addStep('vendor', 'ok', 'vendor/ synced (' . $count . ' files)');
-        }
+            $session->addStep('transport', 'ok', 'Archive uploaded via FTP to ' . $remoteFile);
 
-        ftp_close($connection);
+            if (($manifest->deploy()['vendor'] ?? false) === true) {
+                $vendorLocal = rtrim($this->config->paths()->root(), '/') . '/vendor';
+                if (!is_dir($vendorLocal)) {
+                    throw new PinrollException('vendor/ not found locally — run composer install first.');
+                }
+
+                $deployRoot = HostDir::deployRoot(HostDir::fromTarget($target));
+                $remoteVendor = ($deployRoot === '.' ? '' : $deployRoot . '/') . 'vendor';
+                PushProgress::arrow('vendor/');
+                $count = $uploader->uploadDirectory($connection, $vendorLocal, $remoteVendor, 'vendor');
+                $session->addStep('vendor', 'ok', 'vendor/ synced (' . $count . ' files)');
+            }
+        } finally {
+            if (is_resource($connection)) {
+                @ftp_close($connection);
+            }
+        }
     }
 
     /**
@@ -108,17 +98,6 @@ final class FtpTransport implements TransportInterface
         $remoteName = ($deployId !== '' ? $deployId : pathinfo(basename($pinx), PATHINFO_FILENAME)) . '.pinx';
 
         return [$pinx, $remoteName];
-    }
-
-    private function ftpMkdirRecursive($connection, string $path): void
-    {
-        $parts = array_filter(explode('/', str_replace('\\', '/', $path)));
-        $current = '';
-
-        foreach ($parts as $part) {
-            $current = $current === '' ? $part : $current . '/' . $part;
-            @ftp_mkdir($connection, $current);
-        }
     }
 
     private function formatBytes(int $bytes): string

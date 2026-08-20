@@ -46,13 +46,61 @@ final class FtpUploader
     /**
      * @param resource $connection
      */
-    public function uploadFile($connection, string $localFile, string $remoteFile): void
+    public function uploadFile($connection, string $localFile, string $remoteFile, ?string $label = null): void
     {
         $remoteDir = dirname(str_replace('\\', '/', $remoteFile));
         $this->mkdirRecursive($connection, $remoteDir);
 
+        $label = $label ?? basename($localFile);
+        $size = is_file($localFile) ? (int) filesize($localFile) : 0;
+
+        if (function_exists('ftp_nb_put')) {
+            $this->uploadFileNonBlocking($connection, $localFile, $remoteFile, $size, $label);
+
+            return;
+        }
+
         if (!@ftp_put($connection, $remoteFile, $localFile, FTP_BINARY)) {
             throw new PinrollException('FTP upload failed: ' . $remoteFile);
+        }
+
+        if ($size > 0) {
+            PushProgress::progress($size, $size, $label);
+        }
+    }
+
+    /**
+     * @param resource $connection
+     */
+    private function uploadFileNonBlocking($connection, string $localFile, string $remoteFile, int $size, string $label): void
+    {
+        $ret = @ftp_nb_put($connection, $remoteFile, $localFile, FTP_BINARY);
+        if ($ret === FTP_FAILED) {
+            if (!@ftp_put($connection, $remoteFile, $localFile, FTP_BINARY)) {
+                throw new PinrollException('FTP upload failed: ' . $remoteFile);
+            }
+            if ($size > 0) {
+                PushProgress::progress($size, $size, $label);
+            }
+
+            return;
+        }
+
+        while ($ret === FTP_MOREDATA) {
+            PushProgress::pulse(
+                $label . ($size > 0 ? '  ' . PushProgressBar::bytes($size) : ''),
+            );
+            $ret = ftp_nb_continue($connection);
+        }
+
+        if ($ret !== FTP_FINISHED) {
+            throw new PinrollException('FTP upload failed: ' . $remoteFile);
+        }
+
+        if ($size > 0) {
+            PushProgress::progress($size, $size, $label);
+        } else {
+            PushProgress::endBar();
         }
     }
 
@@ -82,16 +130,29 @@ final class FtpUploader
         }
 
         $createDir = defined('CURLFTP_CREATE_DIR_RETRY') ? CURLFTP_CREATE_DIR_RETRY : 2;
+        $label = basename($localFile);
+        $size = (int) filesize($localFile);
         curl_setopt_array($ch, [
             CURLOPT_UPLOAD => true,
             CURLOPT_INFILE => $stream,
-            CURLOPT_INFILESIZE => (int) filesize($localFile),
+            CURLOPT_INFILESIZE => $size,
             CURLOPT_USERNAME => $user,
             CURLOPT_PASSWORD => $password,
             CURLOPT_TIMEOUT => 30,
             CURLOPT_CONNECTTIMEOUT => 20,
             CURLOPT_FTP_CREATE_MISSING_DIRS => $createDir,
             CURLOPT_FTP_USE_EPSV => false,
+            CURLOPT_NOPROGRESS => false,
+            CURLOPT_PROGRESSFUNCTION => static function ($resource, $dltotal, $dlnow, $ultotal, $ulnow) use ($label, $size): int {
+                unset($resource, $dltotal, $dlnow);
+                $total = (int) $ultotal > 0 ? (int) $ultotal : $size;
+                $now = (int) $ulnow;
+                if ($total > 0 && $now > 0) {
+                    PushProgress::progress($now, $total, $label);
+                }
+
+                return 0;
+            },
         ]);
 
         $ok = curl_exec($ch);

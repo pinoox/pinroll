@@ -8,8 +8,8 @@ use Pinoox\Pinroll\Console\PinrollCli;
 use Pinoox\Pinroll\Console\PinrollInput;
 use Pinoox\Pinroll\Pinroll;
 use Pinoox\Pinroll\Support\NativePathResolver;
-use Pinoox\Pinroll\Support\PushConsole;
 use Pinoox\Pinroll\Support\PushProgress;
+use Pinoox\Pinroll\Support\PushProgressBar;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -39,11 +39,7 @@ class PinrollSyncCommand extends Terminal
     {
         parent::execute($input, $output);
         $io = new SymfonyStyle($input, $output);
-
-        PushProgress::bind(
-            static fn (string $message, string $style = PushConsole::STYLE_DEFAULT) => $io->writeln(PushConsole::format($message, $style)),
-            $output->isVerbose(),
-        );
+        PushProgressBar::bind($output, $io, $output->isVerbose());
 
         try {
             $from = trim((string) ($input->getOption('from') ?: ''));
@@ -81,6 +77,7 @@ class PinrollSyncCommand extends Terminal
 
             return Command::FAILURE;
         } finally {
+            PushProgress::endBar();
             PushProgress::bind(null);
         }
     }

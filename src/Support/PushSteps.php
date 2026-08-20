@@ -30,6 +30,7 @@ final class PushSteps
 
     public static function start(string $label): void
     {
+        PushProgress::endBar();
         self::$current++;
         $total = count(self::$labels);
 
@@ -44,6 +45,7 @@ final class PushSteps
 
     public static function done(string $detail = ''): void
     {
+        PushProgress::endBar();
         PushProgress::success($detail !== '' ? $detail : 'done');
     }
 }

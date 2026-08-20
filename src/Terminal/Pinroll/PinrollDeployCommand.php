@@ -10,12 +10,11 @@ use Pinoox\Pinroll\Console\PinrollInput;
 use Pinoox\Pinroll\Console\PushRuleResolver;
 use Pinoox\Pinroll\Pinroll;
 use Pinoox\Pinroll\Support\NativePathResolver;
-use Pinoox\Pinroll\Support\PushConsole;
 use Pinoox\Pinroll\Support\PushProgress;
+use Pinoox\Pinroll\Support\PushProgressBar;
 use Pinoox\Pinroll\Target\TargetChecker;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -51,43 +50,7 @@ class PinrollDeployCommand extends Terminal
         parent::execute($input, $output);
         $io = new SymfonyStyle($input, $output);
         $verbose = $output->isVerbose();
-        $progressBar = null;
-
-        PushProgress::bind(
-            function (string $message, string $style = PushConsole::STYLE_DEFAULT) use ($io): void {
-                $formatted = PushConsole::format($message, $style);
-                if ($formatted === '') {
-                    $io->newLine();
-
-                    return;
-                }
-
-                $io->writeln($formatted);
-            },
-            $verbose,
-            function (int $current, int $total, string $label) use ($output, $io, &$progressBar): void {
-                if ($progressBar === null) {
-                    $progressBar = new ProgressBar($output, max(1, $total));
-                    $progressBar->setBarCharacter('▓');
-                    $progressBar->setEmptyBarCharacter('░');
-                    $progressBar->setProgressCharacter('');
-                    $progressBar->setFormat(
-                        ' <fg=cyan>%current%/%max%</> <fg=green>[%bar%]</> <fg=gray>%percent:3s%%</> <comment>%message%</>',
-                    );
-                    $progressBar->setMessage($label);
-                    $progressBar->start();
-                }
-
-                $progressBar->setMessage($label);
-                $progressBar->setProgress($current);
-
-                if ($current >= $total) {
-                    $progressBar->finish();
-                    $io->newLine();
-                    $progressBar = null;
-                }
-            },
-        );
+        PushProgressBar::bind($output, $io, $verbose);
 
         try {
             $root = defined('PINOOX_BASE_PATH') ? PINOOX_BASE_PATH : getcwd();
@@ -128,6 +91,7 @@ class PinrollDeployCommand extends Terminal
 
             return Command::FAILURE;
         } finally {
+            PushProgress::endBar();
             PushProgress::bind(null);
         }
     }
