@@ -305,3 +305,15 @@ test('mysql probe reports empty database name without connecting', function () {
     expect($result['ok'])->toBeFalse()
         ->and($result['message'])->toContain('empty');
 });
+
+test('mysql probe reports empty username', function () {
+    $result = pinroll_try_mysql_connection([
+        'host' => 'localhost',
+        'database' => 'main',
+        'username' => '',
+        'password' => 'secret',
+    ]);
+
+    expect($result['ok'])->toBeFalse()
+        ->and($result['message'])->toContain('username');
+});

@@ -110,7 +110,19 @@ final class ProvisionRunner
         $check = PinGateClient::checkDb($gateUrl, $token, $credentials['db']);
         $result['check_db'] = $check;
         if (empty($check['ok'])) {
-            throw new PinrollException((string) ($check['message'] ?? 'Database connection failed from the host.'));
+            $message = (string) ($check['message'] ?? 'Database connection failed from the host.');
+            $received = is_array($check['received'] ?? null) ? $check['received'] : [];
+            if ($received !== []) {
+                $message .= sprintf(
+                    ' (host=%s database=%s username=%s password_len=%s)',
+                    (string) ($received['host'] ?? ''),
+                    (string) ($received['database'] ?? ''),
+                    (string) ($received['username'] ?? ''),
+                    (string) ($received['password_len'] ?? '0'),
+                );
+            }
+
+            throw new PinrollException($message);
         }
 
         PushProgress::arrow('Run installer setup');

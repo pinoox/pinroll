@@ -106,6 +106,20 @@ function pinroll_pingate_run(string $root, array $gateConfig = []): void
         return;
     }
 
+    if ($method === 'POST' && $path === 'check-db') {
+        $input = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($input)) {
+            $input = is_array($_POST) ? $_POST : [];
+        }
+        $db = is_array($input['db'] ?? null) ? $input['db'] : [];
+        $result = pinroll_try_mysql_connection($db);
+        header('Content-Type: application/json');
+        header('X-Content-Type-Options: nosniff');
+        echo json_encode(['success' => true, 'data' => $result], JSON_UNESCAPED_UNICODE);
+
+        return;
+    }
+
     try {
         $root = pinroll_resolve_platform_root($root, $gateConfig);
     } catch (Throwable $e) {
@@ -2654,6 +2668,10 @@ function pinroll_try_mysql_connection(array $db): array
         return ['ok' => false, 'message' => 'Database name is empty.'];
     }
 
+    if ($username === '') {
+        return ['ok' => false, 'message' => 'Database username is empty in the PinGate request.'];
+    }
+
     if (!extension_loaded('pdo_mysql')) {
         return [
             'ok' => false,
@@ -2665,18 +2683,29 @@ function pinroll_try_mysql_connection(array $db): array
         $port = '3306';
     }
 
-    $hosts = array_values(array_unique(array_filter([
-        $host !== '' ? $host : 'localhost',
-        $host === 'localhost' ? '127.0.0.1' : '',
-    ])));
+    $dsns = [];
+    if ($host === 'localhost' || $host === '') {
+        foreach ([
+            '/tmp/mysql.sock',
+            '/var/lib/mysql/mysql.sock',
+            '/var/run/mysqld/mysqld.sock',
+            '/Applications/MAMP/tmp/mysql/mysql.sock',
+        ] as $socket) {
+            $dsns[] = 'mysql:unix_socket=' . $socket . ';dbname=' . $database . ';charset=utf8mb4';
+        }
+        $dsns[] = 'mysql:host=localhost;dbname=' . $database . ';charset=utf8mb4';
+        $dsns[] = 'mysql:host=localhost;port=' . $port . ';dbname=' . $database . ';charset=utf8mb4';
+        $dsns[] = 'mysql:host=127.0.0.1;port=' . $port . ';dbname=' . $database . ';charset=utf8mb4';
+    } else {
+        $dsns[] = 'mysql:host=' . $host . ';port=' . $port . ';dbname=' . $database . ';charset=utf8mb4';
+        $dsns[] = 'mysql:host=' . $host . ';dbname=' . $database . ';charset=utf8mb4';
+    }
 
     $last = 'Database connection failed from this host.';
-    foreach ($hosts as $tryHost) {
+    foreach ($dsns as $dsn) {
         try {
-            $dsn = 'mysql:host=' . $tryHost . ';port=' . $port . ';dbname=' . $database . ';charset=utf8mb4';
             $pdo = new PDO($dsn, $username, $password, [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_TIMEOUT => 8,
             ]);
             $pdo->query('SELECT 1');
 
@@ -2689,14 +2718,24 @@ function pinroll_try_mysql_connection(array $db): array
     $hint = '';
     $lower = strtolower($last);
     if (str_contains($lower, 'no such file') || str_contains($lower, '2002')) {
-        $hint = ' If the host is localhost, try 127.0.0.1 (TCP instead of a UNIX socket).';
+        $hint = ' MySQL socket/TCP mismatch — try host 127.0.0.1 in provision db.host.';
     } elseif (str_contains($lower, 'access denied') || str_contains($lower, '1045')) {
-        $hint = ' Username/password were rejected by MySQL on the host (not from your PC).';
+        $hint = ' MySQL rejected the username/password on this host.';
     } elseif (str_contains($lower, 'unknown database') || str_contains($lower, '1049')) {
         $hint = ' Create the database in cPanel first, then retry.';
     }
 
-    return ['ok' => false, 'message' => 'Database connection failed from this host: ' . $last . $hint];
+    return [
+        'ok' => false,
+        'message' => 'Database connection failed from this host: ' . $last . $hint,
+        'received' => [
+            'host' => $host,
+            'port' => $port,
+            'database' => $database,
+            'username' => $username,
+            'password_len' => strlen($password),
+        ],
+    ];
 }
 
 function pinroll_boot_platform_for_setup(string $root): void
