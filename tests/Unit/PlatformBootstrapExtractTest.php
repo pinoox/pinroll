@@ -317,3 +317,31 @@ test('mysql probe reports empty username', function () {
     expect($result['ok'])->toBeFalse()
         ->and($result['message'])->toContain('username');
 });
+
+test('database stable writer creates pinker config file', function () {
+    $tmp = sys_get_temp_dir() . '/pinroll-db-stable-' . bin2hex(random_bytes(4));
+    mkdir($tmp . '/pinker/stable/platform', 0755, true);
+
+    expect(pinroll_write_database_stable($tmp, [
+        'host' => 'localhost',
+        'database' => 'main',
+        'username' => 'user',
+        'password' => 'secret',
+        'connection' => 'mysql',
+        'port' => '3306',
+        'prefix' => 'pin_',
+    ]))->toBeTrue();
+
+    $file = $tmp . '/pinker/stable/platform/database.config.php';
+    expect(is_file($file))->toBeTrue();
+    $data = include $file;
+    expect($data['default'] ?? null)->toBe('mysql')
+        ->and($data['connections']['mysql']['database'] ?? null)->toBe('main')
+        ->and($data['connections']['mysql']['prefix'] ?? null)->toBe('pin_');
+
+    @unlink($file);
+    @rmdir($tmp . '/pinker/stable/platform');
+    @rmdir($tmp . '/pinker/stable');
+    @rmdir($tmp . '/pinker');
+    @rmdir($tmp);
+});

@@ -88,6 +88,15 @@ final class PlatformBootstrap
 
         self::sanitizeHostProjectEnv($root);
 
+        if (getenv('PINROLL_GATE') === '1' || ($_ENV['PINROLL_GATE'] ?? '') === '1') {
+            putenv('APP_ENV=production');
+            putenv('MODE=production');
+            $_ENV['APP_ENV'] = 'production';
+            $_ENV['MODE'] = 'production';
+            $_SERVER['APP_ENV'] = 'production';
+            $_SERVER['MODE'] = 'production';
+        }
+
         if (class_exists(\Pinoox\Support\SystemConfig::class)) {
             \Pinoox\Support\SystemConfig::clearCache();
         }

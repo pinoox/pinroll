@@ -10,6 +10,9 @@ function pinroll_pingate_run(string $root, array $gateConfig = []): void
 {
     @ini_set('memory_limit', '512M');
     @set_time_limit(600);
+    putenv('PINROLL_GATE=1');
+    $_ENV['PINROLL_GATE'] = '1';
+    $_SERVER['PINROLL_GATE'] = '1';
 
     $root = rtrim(str_replace('\\', '/', $root), '/');
     $configFile = $root . '/pingate.php';
@@ -116,6 +119,16 @@ function pinroll_pingate_run(string $root, array $gateConfig = []): void
         header('Content-Type: application/json');
         header('X-Content-Type-Options: nosniff');
         echo json_encode(['success' => true, 'data' => $result], JSON_UNESCAPED_UNICODE);
+
+        return;
+    }
+
+    if ($method === 'POST' && $path === 'setup') {
+        $input = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($input) || $input === []) {
+            $input = is_array($_POST) ? $_POST : [];
+        }
+        pinroll_handle_direct_setup($root, $gateConfig, is_array($input) ? $input : []);
 
         return;
     }
@@ -1963,6 +1976,36 @@ function pinroll_handle_direct_install(string $root, array $gateConfig, array $i
     }
 }
 
+function pinroll_handle_direct_setup(string $root, array $gateConfig, array $input): void
+{
+    try {
+        $root = pinroll_resolve_platform_root($root, $gateConfig);
+    } catch (Throwable $e) {
+        pinroll_gate_json_error(503, $e->getMessage());
+
+        return;
+    }
+
+    pinroll_load_platform_autoload($root);
+
+    try {
+        $result = pinroll_pincore_setup($root, $input);
+        header('Content-Type: application/json');
+        header('X-Content-Type-Options: nosniff');
+        echo json_encode(['success' => true, 'data' => $result], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $e) {
+        $message = trim($e->getMessage());
+        $previous = $e->getPrevious();
+        if ($previous instanceof Throwable) {
+            $prev = trim($previous->getMessage());
+            if ($prev !== '' && !str_contains($message, $prev)) {
+                $message .= ': ' . $prev;
+            }
+        }
+        pinroll_gate_json_error((int) ($e->getCode() ?: 500), $message !== '' ? $message : 'PinGate setup failed.');
+    }
+}
+
 function pinroll_handle_direct_cleanup(string $root, array $gateConfig, array $input): void
 {
     try {
@@ -2573,35 +2616,6 @@ function pinroll_directory_bytes(string $dir): int
  */
 function pinroll_pincore_setup(string $root, array $input): array
 {
-    pinroll_boot_platform_for_setup($root);
-
-    if (class_exists(\Pinoox\Pinroll\PinGate\HostSetup::class)) {
-        $db = is_array($input['db'] ?? null) ? $input['db'] : [];
-        $user = is_array($input['user'] ?? null) ? $input['user'] : [];
-        $lang = isset($input['lang']) ? (string) $input['lang'] : null;
-        foreach (pinroll_default_admin_user() as $key => $value) {
-            if (trim((string) ($user[$key] ?? '')) === '') {
-                $user[$key] = $value;
-            }
-        }
-
-        $result = \Pinoox\Pinroll\PinGate\HostSetup::run($root, $db, $user, $lang, !empty($input['force']));
-        $finish = pinroll_finish_install($root);
-
-        return array_merge($result, [
-            'routes' => $finish['routes'],
-            'installer_disabled' => $finish['installer_disabled'],
-        ]);
-    }
-
-    if (!class_exists(\App\com_pinoox_installer\Component\SetupService::class)) {
-        throw new RuntimeException('Installer app is missing on the host. Re-run pinroll:provision.');
-    }
-
-    if (empty($input['force']) && pinroll_installer_is_disabled($root)) {
-        throw new RuntimeException('This site is already installed (installer is disabled). Pass force=true to re-run setup.');
-    }
-
     $db = is_array($input['db'] ?? null) ? $input['db'] : [];
     $user = is_array($input['user'] ?? null) ? $input['user'] : [];
     $lang = isset($input['lang']) ? (string) $input['lang'] : 'en';
@@ -2610,17 +2624,64 @@ function pinroll_pincore_setup(string $root, array $input): array
             $user[$key] = $value;
         }
     }
+
+    pinroll_apply_provision_env($db);
+    pinroll_boot_platform_for_setup($root);
+    pinroll_apply_provision_env($db);
+    if (class_exists(\Pinoox\Support\SystemConfig::class)) {
+        \Pinoox\Support\SystemConfig::clearCache();
+    }
+
+    if (empty($input['force']) && pinroll_installer_is_disabled($root)) {
+        throw new RuntimeException('This site is already installed (installer is disabled). Pass force=true to re-run setup.');
+    }
+
     $errors = pinroll_validate_provision_payload($db, $user, $lang);
     if ($errors !== []) {
         throw new RuntimeException(implode("\n", $errors));
     }
 
-    \App\com_pinoox_installer\Component\SetupService::make()->run($db, $user, $lang);
+    $probe = pinroll_try_mysql_connection($db);
+    if (empty($probe['ok'])) {
+        throw new RuntimeException((string) ($probe['message'] ?? 'Database connection failed from this host.'));
+    }
+
+    if (!pinroll_write_database_stable($root, $db)) {
+        throw new RuntimeException('Could not write pinker/stable/platform/database.config.php. Check folder permissions on the host.');
+    }
+
+    pinroll_refresh_eloquent_connection($db);
+
+    $setupError = null;
+    if (class_exists(\App\com_pinoox_installer\Component\SetupService::class)) {
+        try {
+            \App\com_pinoox_installer\Component\SetupService::make()->run($db, $user, $lang);
+            $setupError = false;
+        } catch (Throwable $e) {
+            $setupError = $e;
+        }
+    }
+
+    if ($setupError instanceof Throwable) {
+        try {
+            pinroll_provision_without_installer($root, $db, $user, $lang);
+        } catch (Throwable $fallback) {
+            throw new RuntimeException(
+                pinroll_setup_error_message($setupError) . ' | fallback: ' . $fallback->getMessage(),
+                0,
+                $fallback,
+            );
+        }
+    } elseif ($setupError === null) {
+        pinroll_provision_without_installer($root, $db, $user, $lang);
+    }
 
     $htaccess = false;
     try {
-        (new \App\com_pinoox_installer\Component\HtaccessManager())->create();
-        $htaccess = true;
+        if (class_exists(\App\com_pinoox_installer\Component\HtaccessManager::class)) {
+            (new \App\com_pinoox_installer\Component\HtaccessManager())->create();
+            $htaccess = true;
+        }
     } catch (Throwable) {
     }
 
@@ -2633,6 +2694,283 @@ function pinroll_pincore_setup(string $root, array $input): array
         'routes' => $finish['routes'],
         'installer_disabled' => $finish['installer_disabled'],
     ];
+}
+
+/**
+ * @param array<string, mixed> $db
+ */
+function pinroll_apply_provision_env(array $db): void
+{
+    $connection = strtolower(trim((string) ($db['connection'] ?? 'mysql')));
+    if ($connection === '') {
+        $connection = 'mysql';
+    }
+
+    $vars = [
+        'PINROLL_GATE' => '1',
+        'APP_ENV' => 'production',
+        'MODE' => 'production',
+        'DB_CONNECTION' => $connection,
+        'DB_DRIVER' => $connection === 'mariadb' ? 'mariadb' : 'mysql',
+        'DB_HOST' => (string) ($db['host'] ?? 'localhost'),
+        'DB_PORT' => (string) ($db['port'] ?? '3306'),
+        'DB_DATABASE' => (string) ($db['database'] ?? ''),
+        'DB_USERNAME' => (string) ($db['username'] ?? ''),
+        'DB_PASSWORD' => (string) ($db['password'] ?? ''),
+        'DB_PREFIX' => (string) ($db['prefix'] ?? 'pin_'),
+        'DB_TIMEZONE' => (string) ($db['timezone'] ?? '+03:30'),
+        'DB_SOCKET' => '',
+    ];
+
+    foreach ($vars as $key => $value) {
+        putenv($key . '=' . $value);
+        $_ENV[$key] = $value;
+        $_SERVER[$key] = $value;
+    }
+}
+
+/**
+ * @param array<string, mixed> $db
+ */
+function pinroll_normalize_mysql_config(array $db): array
+{
+    $connection = strtolower(trim((string) ($db['connection'] ?? 'mysql')));
+    if ($connection === '') {
+        $connection = 'mysql';
+    }
+
+    return [
+        'driver' => $connection === 'mariadb' ? 'mysql' : 'mysql',
+        'host' => (string) ($db['host'] ?? 'localhost'),
+        'port' => (string) ($db['port'] ?? '3306'),
+        'database' => (string) ($db['database'] ?? ''),
+        'username' => (string) ($db['username'] ?? ''),
+        'password' => (string) ($db['password'] ?? ''),
+        'prefix' => (string) ($db['prefix'] ?? 'pin_'),
+        'charset' => 'utf8mb4',
+        'collation' => $connection === 'mariadb' ? 'utf8mb4_unicode_ci' : 'utf8mb4_bin',
+        'strict' => true,
+        'engine' => 'InnoDB',
+        'timezone' => (string) ($db['timezone'] ?? '+03:30'),
+        'unix_socket' => '',
+    ];
+}
+
+/**
+ * @param array<string, mixed> $db
+ */
+function pinroll_write_database_stable(string $root, array $db): bool
+{
+    $root = rtrim(str_replace('\\', '/', $root), '/');
+    $connection = strtolower(trim((string) ($db['connection'] ?? 'mysql')));
+    if ($connection === '') {
+        $connection = 'mysql';
+    }
+    $config = pinroll_normalize_mysql_config($db);
+    $payload = [
+        'default' => $connection,
+        'connections' => [
+            $connection => $config,
+        ],
+    ];
+
+    $file = $root . '/pinker/stable/platform/database.config.php';
+    $dir = dirname($file);
+    if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+        return false;
+    }
+
+    $export = var_export($payload, true);
+    $php = "<?php\n\nreturn {$export};\n";
+
+    return @file_put_contents($file, $php) !== false;
+}
+
+/**
+ * @param array<string, mixed> $db
+ */
+function pinroll_refresh_eloquent_connection(array $db): void
+{
+    $config = pinroll_normalize_mysql_config($db);
+
+    if (class_exists(\Pinoox\Portal\Database\DB::class)
+        && method_exists(\Pinoox\Portal\Database\DB::class, 'refreshCoreConnection')
+    ) {
+        \Pinoox\Portal\Database\DB::refreshCoreConnection($config);
+
+        return;
+    }
+
+    if (!class_exists(\Pinoox\Portal\Database\DB::class)) {
+        return;
+    }
+
+    \Pinoox\Portal\Database\DB::addConnection($config, 'default');
+    \Pinoox\Portal\Database\DB::addConnection($config, 'platform');
+    \Pinoox\Portal\Database\DB::bootEloquent();
+}
+
+/**
+ * @param array<string, mixed> $db
+ * @param array<string, mixed> $user
+ */
+function pinroll_provision_without_installer(string $root, array $db, array $user, string $lang): void
+{
+    unset($root);
+    pinroll_refresh_eloquent_connection($db);
+
+    if (!class_exists(\Pinoox\Component\Package\AppProvisioner::class)
+        || !class_exists(\Pinoox\Portal\App\AppEngine::class)
+    ) {
+        throw new RuntimeException('AppProvisioner is not available on the host. Re-run pinroll:provision to upload platform.zip.');
+    }
+
+    if (class_exists(\Pinoox\Support\PackageContext::class)) {
+        \Pinoox\Support\PackageContext::use('platform');
+    }
+
+    $provisioner = new \Pinoox\Component\Package\AppProvisioner(\Pinoox\Portal\App\AppEngine::___());
+    $provisioner->provisionCore(['skip_patch' => true]);
+    pinroll_assert_core_tables($db);
+
+    $packages = $provisioner->packagesForSetup([
+        'exclude' => ['com_pinoox_installer'],
+        'only_enabled' => true,
+    ]);
+    $provisioner->migratePackages($packages);
+    $provisioner->provisionCore(['skip_migrate' => true]);
+    $provisioner->patchPackages($packages);
+    $provisioner->applyLangToPackages($packages, $lang);
+    pinroll_ensure_admin_user($user);
+}
+
+/**
+ * @param array<string, mixed> $db
+ */
+function pinroll_assert_core_tables(array $db): void
+{
+    $prefix = (string) ($db['prefix'] ?? 'pin_');
+    $database = (string) ($db['database'] ?? '');
+    $tables = ['history', 'user', 'token', 'file', 'role'];
+
+    if (class_exists(\Pinoox\Portal\Database\DB::class)
+        && method_exists(\Pinoox\Portal\Database\DB::class, 'physicalTableName')
+    ) {
+        try {
+            $connection = \Pinoox\Portal\Database\DB::connection('platform');
+            $database = (string) $connection->getDatabaseName();
+            foreach ($tables as $table) {
+                $physical = \Pinoox\Portal\Database\DB::physicalTableName($table, 'platform');
+                $row = $connection->selectOne(
+                    'SELECT 1 AS found FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1',
+                    [$database, $physical],
+                );
+                if ($row === null) {
+                    throw new RuntimeException('Core table missing after migration: ' . $physical);
+                }
+            }
+
+            return;
+        } catch (RuntimeException $e) {
+            throw $e;
+        } catch (Throwable) {
+        }
+    }
+
+    $probe = pinroll_try_mysql_connection($db);
+    if (empty($probe['ok'])) {
+        throw new RuntimeException((string) ($probe['message'] ?? 'Database connection failed while checking tables.'));
+    }
+
+    $dsnHosts = array_values(array_unique(array_filter([
+        (string) ($db['host'] ?? 'localhost'),
+        ((string) ($db['host'] ?? '')) === 'localhost' ? '127.0.0.1' : '',
+    ])));
+    $last = 'Could not verify core tables.';
+    foreach ($dsnHosts as $host) {
+        try {
+            $pdo = new PDO(
+                'mysql:host=' . $host . ';port=' . (string) ($db['port'] ?? '3306') . ';dbname=' . $database . ';charset=utf8mb4',
+                (string) ($db['username'] ?? ''),
+                (string) ($db['password'] ?? ''),
+                [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
+            );
+            foreach ($tables as $table) {
+                $physical = $prefix . $table;
+                $stmt = $pdo->prepare('SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1');
+                $stmt->execute([$database, $physical]);
+                if ($stmt->fetch() === false) {
+                    throw new RuntimeException('Core table missing after migration: ' . $physical);
+                }
+            }
+
+            return;
+        } catch (RuntimeException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            $last = $e->getMessage();
+        }
+    }
+
+    throw new RuntimeException($last);
+}
+
+/**
+ * @param array<string, mixed> $user
+ */
+function pinroll_ensure_admin_user(array $user): void
+{
+    $username = trim((string) ($user['username'] ?? ''));
+    if ($username === '') {
+        throw new RuntimeException('Admin username is empty.');
+    }
+
+    if (class_exists(\Pinoox\Support\PackageContext::class)) {
+        \Pinoox\Support\PackageContext::use('platform');
+    }
+
+    if (!class_exists(\Pinoox\Model\UserModel::class)) {
+        throw new RuntimeException('UserModel is not available on the host.');
+    }
+
+    $exists = \Pinoox\Model\UserModel::withoutGlobalScopes()
+        ->where('app', 'platform')
+        ->where('username', $username)
+        ->exists();
+    if ($exists) {
+        return;
+    }
+
+    $created = \Pinoox\Model\UserModel::withoutGlobalScopes()->create([
+        'app' => 'platform',
+        'group_key' => 'admin',
+        'fname' => $user['fname'] ?? 'support',
+        'lname' => $user['lname'] ?? 'pinoox',
+        'username' => $username,
+        'password' => $user['password'] ?? '',
+        'email' => $user['email'] ?? '',
+    ]);
+    if (!$created) {
+        throw new RuntimeException('Could not create the admin user.');
+    }
+}
+
+function pinroll_setup_error_message(Throwable $e): string
+{
+    $message = trim($e->getMessage());
+    $previous = $e->getPrevious();
+    if ($previous instanceof Throwable) {
+        $prev = trim($previous->getMessage());
+        if ($prev !== '' && !str_contains($message, $prev)) {
+            $message .= ': ' . $prev;
+        }
+    }
+
+    if ($message === 'install.err_insert_tables') {
+        return 'Installer could not save database settings or create core tables (install.err_insert_tables).';
+    }
+
+    return $message !== '' ? $message : $e::class;
 }
 
 /**

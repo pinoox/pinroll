@@ -152,11 +152,7 @@ final class HostSetup
         if (class_exists(\Pinoox\Portal\App\App::class)
             && \Pinoox\Portal\App\App::exists('com_pinoox_installer')
         ) {
-            try {
-                \Pinoox\Portal\App\App::meeting('com_pinoox_installer', $runSetup);
-            } catch (\Throwable) {
-                $runSetup();
-            }
+            \Pinoox\Portal\App\App::meeting('com_pinoox_installer', $runSetup);
         } else {
             $runSetup();
         }
