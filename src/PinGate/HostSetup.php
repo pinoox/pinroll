@@ -17,15 +17,105 @@ final class HostSetup
      */
     public static function checkDb(string $root, array $db): array
     {
-        PlatformBootstrap::ensure($root);
-        self::assertInstallerAvailable();
+        $driver = strtolower(trim((string) ($db['connection'] ?? 'mysql')));
+        if (in_array($driver, ['mysql', 'mariadb', ''], true)) {
+            return self::pdoProbe($db);
+        }
 
-        $ok = \App\com_pinoox_installer\Component\InstallerDatabase::testConnection($db);
+        try {
+            PlatformBootstrap::ensure($root);
+            self::assertInstallerAvailable();
+        } catch (\Throwable $e) {
+            return [
+                'ok' => false,
+                'message' => 'Database connection failed from this host: ' . $e->getMessage(),
+            ];
+        }
+
+        $error = null;
+        $ok = \App\com_pinoox_installer\Component\InstallerDatabase::testConnection($db, $error);
 
         return [
             'ok' => $ok,
-            'message' => $ok ? 'Database connection succeeded.' : 'Database connection failed from this host.',
+            'message' => $ok
+                ? 'Database connection succeeded.'
+                : ('Database connection failed from this host' . ($error ? ': ' . $error : '.')),
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $db
+     * @return array{ok: bool, message: string}
+     */
+    public static function pdoProbe(array $db): array
+    {
+        $host = trim((string) ($db['host'] ?? 'localhost'));
+        $port = trim((string) ($db['port'] ?? '3306'));
+        $database = trim((string) ($db['database'] ?? ''));
+        $username = (string) ($db['username'] ?? '');
+        $password = (string) ($db['password'] ?? '');
+        $driver = strtolower(trim((string) ($db['connection'] ?? 'mysql')));
+
+        if ($database === '') {
+            return ['ok' => false, 'message' => 'Database name is empty.'];
+        }
+
+        if (!in_array($driver, ['mysql', 'mariadb', ''], true)) {
+            return ['ok' => false, 'message' => 'PDO probe supports mysql/mariadb; got ' . $driver . '.'];
+        }
+
+        if (!extension_loaded('pdo_mysql')) {
+            return [
+                'ok' => false,
+                'message' => 'Host PHP is missing the pdo_mysql extension. Enable it in cPanel → Select PHP Version → Extensions.',
+            ];
+        }
+
+        if ($port === '') {
+            $port = '3306';
+        }
+
+        $hosts = array_values(array_unique(array_filter([
+            $host !== '' ? $host : 'localhost',
+            $host === 'localhost' ? '127.0.0.1' : '',
+        ])));
+
+        $last = 'Database connection failed from this host.';
+        foreach ($hosts as $tryHost) {
+            try {
+                $dsn = 'mysql:host=' . $tryHost . ';port=' . $port . ';dbname=' . $database . ';charset=utf8mb4';
+                $pdo = new \PDO($dsn, $username, $password, [
+                    \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                    \PDO::ATTR_TIMEOUT => 8,
+                ]);
+                $pdo->query('SELECT 1');
+
+                return [
+                    'ok' => true,
+                    'message' => 'Database connection succeeded'
+                        . ($tryHost !== $host ? ' via ' . $tryHost : '') . '.',
+                ];
+            } catch (\Throwable $e) {
+                $last = self::safeDbError($e->getMessage());
+            }
+        }
+
+        $hint = '';
+        $lower = strtolower($last);
+        if (str_contains($lower, 'no such file') || str_contains($lower, '2002')) {
+            $hint = ' If the host is localhost, try 127.0.0.1 (TCP instead of a UNIX socket).';
+        } elseif (str_contains($lower, 'access denied') || str_contains($lower, '1045')) {
+            $hint = ' Username/password were rejected by MySQL on the host (not from your PC).';
+        } elseif (str_contains($lower, 'unknown database') || str_contains($lower, '1049')) {
+            $hint = ' Create the database in cPanel first, then retry.';
+        }
+
+        return ['ok' => false, 'message' => 'Database connection failed from this host: ' . $last . $hint];
+    }
+
+    private static function safeDbError(string $message): string
+    {
+        return trim(preg_replace('/password\s*=\s*\S+/i', 'password=***', $message) ?? $message);
     }
 
     /**

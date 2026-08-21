@@ -94,6 +94,9 @@ final class ProvisionRunner
                 ]),
             );
             $result['bootstrap'] = $pushed['extract'];
+        } else {
+            PushProgress::arrow('Upload pingate.php (setup-only still refreshes PinGate)');
+            (new DeployRunner($this->projectRoot))->initGate($hostName, false, null, null, false, true, false);
         }
 
         $gate = HostGate::credentials($raw);

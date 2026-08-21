@@ -2627,25 +2627,76 @@ function pinroll_pincore_setup(string $root, array $input): array
  */
 function pinroll_pincore_check_db(string $root, array $input): array
 {
-    pinroll_boot_platform_for_setup($root);
-
-    if (class_exists(\Pinoox\Pinroll\PinGate\HostSetup::class)) {
-        $db = is_array($input['db'] ?? null) ? $input['db'] : [];
-
-        return \Pinoox\Pinroll\PinGate\HostSetup::checkDb($root, $db);
-    }
-
-    if (!class_exists(\App\com_pinoox_installer\Component\InstallerDatabase::class)) {
-        throw new RuntimeException('Installer database helper is missing on the host.');
-    }
-
     $db = is_array($input['db'] ?? null) ? $input['db'] : [];
-    $ok = \App\com_pinoox_installer\Component\InstallerDatabase::testConnection($db);
 
-    return [
-        'ok' => $ok,
-        'message' => $ok ? 'Database connection succeeded.' : 'Database connection failed from this host.',
-    ];
+    if (class_exists(\Pinoox\Pinroll\PinGate\HostSetup::class)
+        && method_exists(\Pinoox\Pinroll\PinGate\HostSetup::class, 'pdoProbe')
+    ) {
+        return \Pinoox\Pinroll\PinGate\HostSetup::pdoProbe($db);
+    }
+
+    return pinroll_try_mysql_connection($db);
+}
+
+/**
+ * @param array<string, mixed> $db
+ * @return array{ok: bool, message: string}
+ */
+function pinroll_try_mysql_connection(array $db): array
+{
+    $host = trim((string) ($db['host'] ?? 'localhost'));
+    $port = trim((string) ($db['port'] ?? '3306'));
+    $database = trim((string) ($db['database'] ?? ''));
+    $username = (string) ($db['username'] ?? '');
+    $password = (string) ($db['password'] ?? '');
+
+    if ($database === '') {
+        return ['ok' => false, 'message' => 'Database name is empty.'];
+    }
+
+    if (!extension_loaded('pdo_mysql')) {
+        return [
+            'ok' => false,
+            'message' => 'Host PHP is missing the pdo_mysql extension. Enable it in cPanel → Select PHP Version → Extensions.',
+        ];
+    }
+
+    if ($port === '') {
+        $port = '3306';
+    }
+
+    $hosts = array_values(array_unique(array_filter([
+        $host !== '' ? $host : 'localhost',
+        $host === 'localhost' ? '127.0.0.1' : '',
+    ])));
+
+    $last = 'Database connection failed from this host.';
+    foreach ($hosts as $tryHost) {
+        try {
+            $dsn = 'mysql:host=' . $tryHost . ';port=' . $port . ';dbname=' . $database . ';charset=utf8mb4';
+            $pdo = new PDO($dsn, $username, $password, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_TIMEOUT => 8,
+            ]);
+            $pdo->query('SELECT 1');
+
+            return ['ok' => true, 'message' => 'Database connection succeeded.'];
+        } catch (Throwable $e) {
+            $last = trim((string) $e->getMessage());
+        }
+    }
+
+    $hint = '';
+    $lower = strtolower($last);
+    if (str_contains($lower, 'no such file') || str_contains($lower, '2002')) {
+        $hint = ' If the host is localhost, try 127.0.0.1 (TCP instead of a UNIX socket).';
+    } elseif (str_contains($lower, 'access denied') || str_contains($lower, '1045')) {
+        $hint = ' Username/password were rejected by MySQL on the host (not from your PC).';
+    } elseif (str_contains($lower, 'unknown database') || str_contains($lower, '1049')) {
+        $hint = ' Create the database in cPanel first, then retry.';
+    }
+
+    return ['ok' => false, 'message' => 'Database connection failed from this host: ' . $last . $hint];
 }
 
 function pinroll_boot_platform_for_setup(string $root): void

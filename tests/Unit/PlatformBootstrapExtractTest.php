@@ -293,3 +293,15 @@ test('blank-host extract seeds app-router from zip and keeps an existing host ro
     }
     @rmdir($tmp);
 });
+
+test('mysql probe reports empty database name without connecting', function () {
+    $result = pinroll_try_mysql_connection([
+        'host' => 'localhost',
+        'database' => '',
+        'username' => 'user',
+        'password' => 'secret',
+    ]);
+
+    expect($result['ok'])->toBeFalse()
+        ->and($result['message'])->toContain('empty');
+});
