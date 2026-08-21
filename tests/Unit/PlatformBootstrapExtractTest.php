@@ -243,3 +243,53 @@ test('put zip chunk retry is idempotent and checksum mismatch discards leftover'
     }
     @rmdir($tmp);
 });
+
+test('blank-host extract seeds app-router from zip and keeps an existing host router', function () {
+    $tmp = sys_get_temp_dir() . '/pinroll-router-seed-' . bin2hex(random_bytes(4));
+    mkdir($tmp, 0755, true);
+    mkdir($tmp . '/platform', 0755, true);
+    file_put_contents($tmp . '/platform/app-router.config.php', "<?php\nreturn [];\n");
+
+    $zipPath = $tmp . '/platform.zip';
+    $zip = new ZipArchive();
+    expect($zip->open($zipPath, ZipArchive::CREATE))->toBeTrue();
+    $zip->addFromString('index.php', '<?php');
+    $zip->addFromString('vendor/autoload.php', '<?php');
+    $zip->addFromString('platform/app-router.config.php', "<?php\nreturn ['/' => 'com_pinoox_installer'];\n");
+    $zip->close();
+
+    $opened = new ZipArchive();
+    $opened->open($zipPath);
+    expect(pinroll_platform_zip_extract_safe($opened, $tmp))->toBeTrue();
+    $opened->close();
+
+    $seeded = include $tmp . '/platform/app-router.config.php';
+    expect($seeded['/'] ?? null)->toBe('com_pinoox_installer');
+
+    file_put_contents(
+        $tmp . '/platform/app-router.config.php',
+        "<?php\nreturn ['/' => 'com_pinoox_welcome'];\n",
+    );
+
+    $opened = new ZipArchive();
+    $opened->open($zipPath);
+    expect(pinroll_platform_zip_extract_safe($opened, $tmp))->toBeTrue();
+    $opened->close();
+
+    $kept = include $tmp . '/platform/app-router.config.php';
+    expect($kept['/'] ?? null)->toBe('com_pinoox_welcome');
+
+    pinroll_ensure_default_app_router($tmp);
+    $baked = include $tmp . '/pinker/bake/platform/app-router.config.php';
+    expect($baked['/'] ?? null)->toBe('com_pinoox_welcome');
+
+    @unlink($zipPath);
+    @unlink($tmp . '/index.php');
+    @unlink($tmp . '/vendor/autoload.php');
+    @rmdir($tmp . '/vendor');
+    if (function_exists('pinroll_remove_directory')) {
+        pinroll_remove_directory($tmp . '/platform');
+        pinroll_remove_directory($tmp . '/pinker');
+    }
+    @rmdir($tmp);
+});

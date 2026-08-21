@@ -774,6 +774,7 @@ function pinroll_handle_platform_bootstrap(string $root, array $gateConfig, arra
 
     $deletedZip = @unlink($zipReal);
     pinroll_refresh_pinker_overrides($root);
+    pinroll_ensure_default_app_router($root);
 
     header('Content-Type: application/json');
     header('X-Content-Type-Options: nosniff');
@@ -1228,7 +1229,7 @@ function pinroll_platform_zip_prefix(array $entries): string
     return $root;
 }
 
-function pinroll_platform_should_preserve(string $relative): bool
+function pinroll_platform_should_preserve(string $relative, string $root = ''): bool
 {
     $relative = ltrim(str_replace('\\', '/', $relative), '/');
     if ($relative === '' || $relative === 'storage/BUILD.json') {
@@ -1237,6 +1238,19 @@ function pinroll_platform_should_preserve(string $relative): bool
 
     if ($relative === '.env' || str_starts_with($relative, '.env.')) {
         return true;
+    }
+
+    $runtime = [
+        'platform/app-router.config.php',
+        'platform/domain.config.php',
+        'platform/apps.config.php',
+    ];
+    if (in_array($relative, $runtime, true)) {
+        if ($root === '') {
+            return true;
+        }
+
+        return pinroll_runtime_config_is_locked($root, $relative);
     }
 
     $prefixes = [
@@ -1252,13 +1266,34 @@ function pinroll_platform_should_preserve(string $relative): bool
         'pingate.php',
         '.git',
         '.github',
-        'platform/app-router.config.php',
-        'platform/domain.config.php',
-        'platform/apps.config.php',
     ];
 
     foreach ($prefixes as $prefix) {
         if ($relative === $prefix || str_starts_with($relative, $prefix . '/')) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function pinroll_runtime_config_is_locked(string $root, string $relative): bool
+{
+    $file = rtrim($root, '/') . '/' . ltrim(str_replace('\\', '/', $relative), '/');
+    if (!is_file($file)) {
+        return false;
+    }
+
+    $data = include $file;
+    if (!is_array($data) || $data === []) {
+        return false;
+    }
+
+    foreach ($data as $value) {
+        if (is_string($value) && $value !== '') {
+            return true;
+        }
+        if (is_array($value) && $value !== []) {
             return true;
         }
     }
@@ -1292,7 +1327,7 @@ function pinroll_platform_zip_extract_safe(ZipArchive $zip, string $root)
         $relative = $prefix === '' ? $name : (str_starts_with($name, $prefix) ? substr($name, strlen($prefix)) : $name);
         $relative = ltrim(str_replace('\\', '/', (string) $relative), '/');
 
-        if ($relative === '' || pinroll_platform_should_preserve($relative)) {
+        if ($relative === '' || pinroll_platform_should_preserve($relative, $root)) {
             continue;
         }
 
@@ -1757,6 +1792,83 @@ function pinroll_refresh_pinker_overrides(string $root): void
 
     if (class_exists(\Pinoox\Component\Package\Pinx\PlatformPinkerGuard::class)) {
         \Pinoox\Component\Package\Pinx\PlatformPinkerGuard::refreshOverrideTimestamps($root);
+    }
+}
+
+/**
+ * Fallback when pincore is not loaded yet: bake empty/missing pinker copies from source.
+ */
+function pinroll_bake_missing_runtime_configs(string $root): int
+{
+    $root = rtrim(str_replace('\\', '/', $root), '/');
+    $written = 0;
+    $files = [
+        'platform/app-router.config.php',
+        'platform/domain.config.php',
+        'platform/apps.config.php',
+    ];
+
+    foreach ($files as $relative) {
+        $source = $root . '/' . $relative;
+        if (!is_file($source)) {
+            continue;
+        }
+        $data = include $source;
+        if (!is_array($data) || $data === []) {
+            continue;
+        }
+
+        $bake = $root . '/pinker/bake/' . $relative;
+        if (is_file($bake)) {
+            $existing = include $bake;
+            if (is_array($existing) && $existing !== []) {
+                $hasValue = false;
+                foreach ($existing as $value) {
+                    if ($value !== '' && $value !== []) {
+                        $hasValue = true;
+                        break;
+                    }
+                }
+                if ($hasValue) {
+                    continue;
+                }
+            }
+        }
+
+        $dir = dirname($bake);
+        if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+            continue;
+        }
+
+        $export = var_export($data, true);
+        if (@file_put_contents($bake, "<?php\n\nreturn {$export};\n") !== false) {
+            $written++;
+        }
+    }
+
+    return $written;
+}
+
+function pinroll_ensure_default_app_router(string $root): void
+{
+    $root = rtrim(str_replace('\\', '/', $root), '/');
+    $source = $root . '/platform/app-router.config.php';
+    $existing = is_file($source) ? include $source : null;
+    $hasRoutes = is_array($existing) && $existing !== [] && pinroll_runtime_config_is_locked($root, 'platform/app-router.config.php');
+    if (!$hasRoutes) {
+        $dir = dirname($source);
+        if (is_dir($dir) || (@mkdir($dir, 0755, true) || is_dir($dir))) {
+            @file_put_contents(
+                $source,
+                "<?php\n\nreturn [\n    '/' => 'com_pinoox_installer',\n];\n",
+            );
+        }
+    }
+
+    if (class_exists(\Pinoox\Component\Package\Pinx\PlatformPinkerGuard::class)) {
+        \Pinoox\Component\Package\Pinx\PlatformPinkerGuard::bakeMissingRuntimeConfigs($root);
+    } else {
+        pinroll_bake_missing_runtime_configs($root);
     }
 }
 
@@ -2538,6 +2650,8 @@ function pinroll_pincore_check_db(string $root, array $input): array
 
 function pinroll_boot_platform_for_setup(string $root): void
 {
+    pinroll_ensure_default_app_router($root);
+
     if (class_exists(\Pinoox\Pinroll\Bridge\PlatformBootstrap::class)) {
         \Pinoox\Pinroll\Bridge\PlatformBootstrap::ensure($root);
 
