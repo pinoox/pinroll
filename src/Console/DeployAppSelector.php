@@ -35,6 +35,13 @@ final class DeployAppSelector
             }
         }
 
+        // Pinx single-app (app.php at project root): always this package's .pinx.
+        // Ignore hosts.*.apps so a leftover multi-app list cannot hijack deploy.
+        $fromPinxRoot = self::fromPinxRoot($projectRoot);
+        if ($fromPinxRoot !== []) {
+            return $fromPinxRoot;
+        }
+
         $fromHost = self::fromHost($rawHost);
         if ($fromHost !== []) {
             return $fromHost;
@@ -43,16 +50,6 @@ final class DeployAppSelector
         $discovered = ProjectPackages::list($projectRoot);
         if (count($discovered) === 1) {
             return $discovered;
-        }
-
-        if ($projectRoot !== null && is_file(rtrim($projectRoot, '/') . '/app.php')) {
-            try {
-                $profile = \Pinoox\Pinroll\Release\PlatformProfile::fromRoot($projectRoot);
-                if ($profile->packages() !== []) {
-                    return $profile->packages();
-                }
-            } catch (\Throwable) {
-            }
         }
 
         if (!$input->isInteractive()) {
@@ -76,6 +73,32 @@ final class DeployAppSelector
         }
 
         return $selected;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function fromPinxRoot(?string $projectRoot): array
+    {
+        if ($projectRoot === null || $projectRoot === '') {
+            return [];
+        }
+
+        $root = rtrim(str_replace('\\', '/', $projectRoot), '/');
+        if (!is_file($root . '/app.php')) {
+            return [];
+        }
+
+        try {
+            $profile = \Pinoox\Pinroll\Release\PlatformProfile::fromRoot($root);
+            if ($profile->layout() !== \Pinoox\Pinroll\Release\PlatformProfile::LAYOUT_PINX_ROOT) {
+                return [];
+            }
+
+            return $profile->packages();
+        } catch (\Throwable) {
+            return [];
+        }
     }
 
     /**

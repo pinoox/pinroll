@@ -82,6 +82,11 @@ final class PlatformProfile
         return $this->layout === self::LAYOUT_SINGLE || $this->layout === self::LAYOUT_PINX_ROOT;
     }
 
+    public function isPinxRoot(): bool
+    {
+        return $this->layout === self::LAYOUT_PINX_ROOT;
+    }
+
     /**
      * @return list<string>
      */

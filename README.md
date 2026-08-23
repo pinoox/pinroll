@@ -1,6 +1,6 @@
 # Pinroll — Release Rollout Engine
 
-**Pinroll** (`pinoox/pinroll`) **1.5.0** — atomic release rollout, rollback, PinGate delivery, and blank-host provision for Pinoox.
+**Pinroll** (`pinoox/pinroll`) **1.6.8** — atomic release rollout, rollback, PinGate delivery, and blank-host provision for Pinoox.
 
 | Concept | Meaning |
 |---------|---------|
@@ -35,7 +35,7 @@ Put Pinroll in `require` only if you want PinGate to use Pinroll classes on the 
 php pinoox pinroll:init
 php pinoox pinroll:connect          # interactive: kit / FTP / SSH
 # later:
-php pinoox pinroll:deploy --full
+php pinoox pinroll:deploy           # app .pinx only (or pinx deploy from a Pinx project)
 ```
 
 ### Setup methods (no guessing)
@@ -67,7 +67,7 @@ php pinoox pinroll:deploy
 | 6 | `pinroll:deploy` | Build, upload, and install (go live) |
 | 7 | `pinroll:setup` | Post-deploy migrate + patch (`--seed`, `--config`) |
 
-Single-app (pinx-root): `pinx deploy` forwards to `pinroll:deploy`.
+Single-app (pinx-root): `pinx deploy` forwards to `pinroll:deploy` with this project’s package — **`.pinx` only**, not the whole project. See [Deploy a Pinx app](https://github.com/pinoox/docs/blob/master/en/deploy/pinx.md).
 
 ### Subdomain folders
 
