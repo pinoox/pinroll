@@ -1894,8 +1894,9 @@ function pinroll_ensure_default_app_router(string $root): void
         }
     }
 
-    if (class_exists(\Pinoox\Component\Package\Pinx\PlatformPinkerGuard::class)) {
-        \Pinoox\Component\Package\Pinx\PlatformPinkerGuard::bakeMissingRuntimeConfigs($root);
+    $guard = \Pinoox\Component\Package\Pinx\PlatformPinkerGuard::class;
+    if (class_exists($guard) && method_exists($guard, 'bakeMissingRuntimeConfigs')) {
+        $guard::bakeMissingRuntimeConfigs($root);
     } else {
         pinroll_bake_missing_runtime_configs($root);
     }

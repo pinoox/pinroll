@@ -116,7 +116,7 @@ final class ReleaseBuilder
      */
     private function augmentPinxBuildCommand(string $command, ?string $package): array
     {
-        if (!preg_match('/\bpinx:build\b/', $command)) {
+        if (!CliBin::isPinxPackageCommand($command, $this->paths->root())) {
             return [$command, null];
         }
 
@@ -124,7 +124,7 @@ final class ReleaseBuilder
             return [$command, null];
         }
 
-        if (preg_match('/\bpinx:build\s+platform\b/', $command)) {
+        if (preg_match('/\b(?:pinx:build|build)\s+platform\b/', $command)) {
             $outputPath = ProjectPaths::workDir($this->paths) . '/platform-' . date('Ymd_His') . '.zip';
             AppBuildPaths::ensureDir(dirname($outputPath));
             PushProgress::arrow('output: ' . AppBuildPaths::displayPath($this->paths->root(), $outputPath));
@@ -164,7 +164,13 @@ final class ReleaseBuilder
             }
         }
 
-        // Ship a single Pinx/platform archive as-is so host pinx:install / pinx:update can apply it.
+        if ($installables === []) {
+            throw new PinrollException(
+                'Release has no .pinx/.zip to ship. The Pinx package was built but not packed into the archive.',
+            );
+        }
+
+        // Single Pinx/platform archive ships as-is for host pinx:install / pinx:update.
         if (count($installables) === 1) {
             return $installables[0];
         }

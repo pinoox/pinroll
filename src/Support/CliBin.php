@@ -48,6 +48,19 @@ final class CliBin
     }
 
     /**
+     * True for pincore `pinx:build` or Pinx-root `build` (package .pinx).
+     */
+    public static function isPinxPackageCommand(string $command, ?string $root = null): bool
+    {
+        $command = trim($command);
+        if (preg_match('/\bpinx:build\b/', $command) === 1) {
+            return true;
+        }
+
+        return self::isPinx($root) && preg_match('/^build(\s|$)/', $command) === 1;
+    }
+
+    /**
      * Map pincore subcommands onto the Pinx CLI (pinx:build → build, drop package args).
      */
     public static function adaptCommand(string $command, ?string $root = null): string
