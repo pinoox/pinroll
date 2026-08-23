@@ -96,9 +96,8 @@ final class GateTokenRegistry
             return false;
         }
 
-        $candidate = TokenGenerator::hashToken($plainToken);
         foreach (self::acceptedHashes($root, $gateConfig) as $hash) {
-            if (hash_equals($hash, $candidate)) {
+            if (TokenGenerator::matchesStoredHash($plainToken, $hash)) {
                 return true;
             }
         }

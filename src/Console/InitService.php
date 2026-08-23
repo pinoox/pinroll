@@ -10,7 +10,8 @@ use Pinoox\Pinroll\Support\ProjectPaths;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * Non-interactive scaffold: .pinoox/pinroll.config.php + .env key stubs.
+ * Non-interactive scaffold: .pinoox/pinroll.config.php overlay.
+ * Does not modify .env. Optional PINROLL_* in .env still win at runtime.
  * Connection / PinGate upload is pinroll:connect.
  */
 final class InitService
@@ -56,13 +57,11 @@ final class InitService
         }
 
         $envKeys = self::envStubKeys($targetName);
-        $envCreated = self::ensureEnvKeys($this->platformRoot, $envKeys);
+        // Never insert PINROLL_* stubs into .env. User owns .env; Env still wins over overlay at runtime.
+        $envCreated = [];
 
-        if ($io !== null && $envCreated !== []) {
-            $io->writeln('  <fg=green>Added</> .env keys:');
-            foreach ($envCreated as $key) {
-                $io->writeln('    <comment>' . $key . '</comment>');
-            }
+        if ($io !== null) {
+            $io->writeln('  <fg=gray>.env is not modified.</> Optional Env keys (they override overlay): PINROLL_TOKEN, PINROLL_SITE, PINROLL_VIA, PINROLL_PATH, PINROLL_LABEL');
         }
 
         return [

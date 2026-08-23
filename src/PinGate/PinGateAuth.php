@@ -24,7 +24,7 @@ final class PinGateAuth
             throw new PinrollException('Missing bearer token.', 401);
         }
 
-        if (!hash_equals($expectedHash, TokenGenerator::hashToken($token))) {
+        if (!TokenGenerator::matchesStoredHash($token, $expectedHash)) {
             $this->registerFailure();
             throw new PinrollException('Invalid token.', 401);
         }

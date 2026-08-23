@@ -216,20 +216,18 @@ final class ConnectionSetup
         // Only create missing keys as empty; never wipe existing secrets with empty defaults
         $toWrite = [];
         foreach ($values as $key => $value) {
+            if ($value === '') {
+                continue;
+            }
             $existing = self::readEnvValue($envPath, $key);
-            if ($existing !== null && $existing !== '' && $value === '') {
+            if ($existing === $value) {
                 continue;
             }
-            if ($existing !== null && $value === '' && $existing === '') {
-                continue;
-            }
-            if ($existing === null || $value !== '') {
-                $toWrite[$key] = $value;
-            }
+            $toWrite[$key] = $value;
         }
 
         if ($toWrite === []) {
-            $io->writeln('  <fg=gray>.env already has transport keys</>');
+            $io->writeln('  <fg=gray>.env left unchanged (no new transport secrets)</>');
 
             return;
         }

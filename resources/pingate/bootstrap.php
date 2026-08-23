@@ -1774,7 +1774,9 @@ function pinroll_gate_verify_bearer(string $root, array $gateConfig, ?string $au
 
     $candidate = hash('sha256', $token);
     foreach ($hashes as $hash) {
-        if (hash_equals($hash, $candidate)) {
+        $hash = strtolower(trim((string) $hash));
+        // Plaintext (sha256(token) == stored) or the stored hash copied into PINROLL_TOKEN.
+        if (hash_equals($hash, $candidate) || hash_equals($hash, $token)) {
             return;
         }
     }

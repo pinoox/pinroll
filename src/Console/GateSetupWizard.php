@@ -147,22 +147,12 @@ final class GateSetupWizard
         string $gateUrl,
         string $token,
     ): void {
-        $keys = ProjectPreparer::envKeysForTarget($targetName);
-        $envPath = rtrim($projectRoot, '/') . '/.env';
-
-        $io->section('.env');
+        $site = GateUrl::siteFrom($gateUrl);
+        OverlayWriter::persistGate($projectRoot, $targetName, $site, $token);
         $io->writeln([
-            '  <fg=yellow>' . $keys['url'] . '</>=' . $gateUrl,
-            '  <fg=yellow>' . $keys['token'] . '</>=' . $token,
+            '  <fg=gray>Saved site/token to overlay.</> .env is not modified.',
+            '  Optional Env (wins over overlay): PINROLL_SITE, PINROLL_TOKEN, PINROLL_VIA, PINROLL_PATH, PINROLL_LABEL',
         ]);
-
-        if ($io->confirm('Write PinGate URL and token to .env now?', true)) {
-            EnvFileWriter::merge($envPath, [
-                $keys['url'] => $gateUrl,
-                $keys['token'] => $token,
-            ]);
-            $io->success('Updated ' . self::relPath($projectRoot, $envPath));
-        }
     }
 
     /**

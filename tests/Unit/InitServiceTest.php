@@ -26,13 +26,8 @@ test('init scaffolds host and env keys from target name', function () {
         ->and($config)->not->toMatch("/^    'provision' => \[/m");
 
     $env = file_get_contents($root . '/.env');
-    expect($env)->toContain('PINROLL_MYCONNECT_HOST=')
-        ->and($env)->toContain('PINROLL_MYCONNECT_USER=')
-        ->and($env)->toContain('PINROLL_MYCONNECT_PASSWORD=')
-        ->and($env)->toContain('PINROLL_MYCONNECT_URL=')
-        ->and($env)->toContain('PINROLL_MYCONNECT_TOKEN=')
-        ->and($env)->toContain('PINROLL_MYCONNECT_VIA=')
-        ->and($env)->toContain('PINROLL_MYCONNECT_PATH=');
+    expect($env)->toBe("APP_KEY=test\n")
+        ->and($result['env_created'])->toBe([]);
 
     @unlink($result['config']);
     @rmdir($root . '/.pinoox');
@@ -90,7 +85,8 @@ PHP);
         ->and($config)->toContain("'default_host' => 'poy'");
 
     $env = file_get_contents($root . '/.env');
-    expect($env)->toContain('PINROLL_POY2_HOST=');
+    expect($env)->toBe("APP_KEY=test\n")
+        ->and($env)->not->toContain('PINROLL_POY2_HOST=');
 
     @unlink($result['config']);
     @rmdir($root . '/pinroll');
@@ -98,7 +94,7 @@ PHP);
     @rmdir($root);
 });
 
-test('init production host writes unscoped PINROLL_* env stubs', function () {
+test('init production host does not write PINROLL_* stubs into .env', function () {
     $root = sys_get_temp_dir() . '/pinroll-init-prod-' . uniqid('', true);
     mkdir($root, 0755, true);
     file_put_contents($root . '/.env', "APP_KEY=test\n");
@@ -108,18 +104,8 @@ test('init production host writes unscoped PINROLL_* env stubs', function () {
     expect(str_replace('\\', '/', $result['config']))->toEndWith('.pinoox/pinroll.config.php');
 
     $env = file_get_contents($root . '/.env');
-    expect($env)->toContain('PINROLL_VIA=')
-        ->and($env)->toContain('PINROLL_PATH=')
-        ->and($env)->toContain('PINROLL_WEB_PATH=')
-        ->and($env)->toContain('PINROLL_KEEP=')
-        ->and($env)->toContain('PINROLL_URL=')
-        ->and($env)->toContain('PINROLL_SITE=')
-        ->and($env)->toContain('PINROLL_TOKEN=')
-        ->and($env)->toContain('PINROLL_DB_HOST=')
-        ->and($env)->toContain('PINROLL_ADMIN_EMAIL=info@pinoox.com')
-        ->and($env)->toContain('PINROLL_ADMIN_USERNAME=admin')
-        ->and($env)->toContain('PINROLL_ADMIN_PASSWORD=123456')
-        ->and($env)->toContain('PINROLL_LANG=');
+    expect($env)->toBe("APP_KEY=test\n")
+        ->and($result['env_created'])->toBe([]);
 
     @unlink($result['config']);
     @rmdir($root . '/.pinoox');

@@ -143,7 +143,7 @@ final class TargetChecker
             $checks[] = $this->checkField(
                 'pingate',
                 false,
-                'PinGate is reachable but the Bearer token is invalid. Sync token in .env with pingate.php on the host.',
+                'PinGate is reachable but the Bearer token is invalid. PINROLL_TOKEN may be the hash from storage/pinroll/tokens/{label}.php (supported on current PinGate) or the plaintext from pinroll:token. Re-upload pingate.php (pinx kit / pinroll:kit) if the host still rejects the hash, then pinx pinroll:check.',
             );
 
             return $checks;

@@ -98,34 +98,21 @@ final class OverlayWriter
         $overlayPath = is_file($legacy) && !is_file($preferred) ? $legacy : $preferred;
         $hasOverlay = is_file($preferred) || is_file($legacy);
 
-        $envPath = rtrim(str_replace('\\', '/', $projectRoot), '/') . '/.env';
-        $keys = ProjectPreparer::envKeysForTarget($hostName);
-        $envHasGate = self::envHasAny($envPath, [$keys['url'], $keys['token']]);
-
-        if ($hasOverlay || !$envHasGate) {
-            $gate = [
-                'site' => GateUrl::siteFrom($site),
-                'token' => $token,
-            ];
-            if ($label !== null && $label !== '') {
-                $gate['label'] = $label;
-            }
-            $patch = ['gate' => $gate];
-            if ($ftpPassword !== null && $ftpPassword !== '') {
-                $patch['ftp'] = ['password' => $ftpPassword];
-            }
-            self::patch($overlayPath, $hostName, $patch);
-
-            return $overlayPath;
+        // Always persist into overlay. Never rewrite .env — PINROLL_* there already wins at runtime.
+        $gate = [
+            'site' => GateUrl::siteFrom($site),
+            'token' => $token,
+        ];
+        if ($label !== null && $label !== '') {
+            $gate['label'] = $label;
         }
+        $patch = ['gate' => $gate];
+        if ($ftpPassword !== null && $ftpPassword !== '') {
+            $patch['ftp'] = ['password' => $ftpPassword];
+        }
+        self::patch($overlayPath, $hostName, $patch);
 
-        $expanded = GateUrl::expandOrEmpty($site);
-        EnvFileWriter::merge($envPath, [
-            $keys['url'] => $expanded !== '' ? $expanded : $site,
-            $keys['token'] => $token,
-        ]);
-
-        return $envPath;
+        return $overlayPath;
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace Pinoox\Pinroll\Console;
 
 use Pinoox\Pinroll\Pinroll;
+use Pinoox\Pinroll\Support\CliBin;
 use Pinoox\Pinroll\Support\HostDir;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
@@ -239,13 +240,13 @@ final class PinrollCli
 
         $io->newLine();
         $io->section('Pick a setup method');
-        $io->writeln([
+        $io->writeln(CliBin::rewriteLines([
             '  <fg=yellow>A.</> No FTP — zip kit (extract into public_html):',
             '       <comment>php pinoox pinroll:kit' . $hostArg . '</comment>',
             '       <fg=gray>or</> <comment>php pinoox pinroll:connect' . $hostArg . ' --via=pinion</comment>',
             '',
             '  <fg=yellow>B.</> FTP — auto-upload PinGate:',
-            '       Set in .env / overlay: ' . $hostKey . ' / ' . $userKey . ' / ' . $passKey,
+            '       Optional Env / overlay: ' . $hostKey . ' / ' . $userKey . ' / ' . $passKey,
             '       <comment>php pinoox pinroll:connect' . $hostArg . ' --via=ftp</comment>',
             '',
             '  <fg=yellow>C.</> SSH/SFTP:',
@@ -257,7 +258,7 @@ final class PinrollCli
             '  Then go live:',
             '       <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>',
             '       <fg=gray>or platform + all apps:</> <comment>php pinoox pinroll:deploy --full' . $hostArg . '</comment>',
-        ]);
+        ]));
     }
 
     /**
@@ -303,14 +304,14 @@ final class PinrollCli
 
         if ($ok) {
             $io->writeln('  Go live (push + install):');
-            $io->writeln('  <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>');
-            $io->writeln(
+            $io->writeln(CliBin::rewrite('  <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>'));
+            $io->writeln(CliBin::rewrite(
                 '  <fg=gray>or</> <comment>php pinoox pinroll:push' . $hostArg . '</comment>'
                 . ' then <comment>php pinoox pinroll:install' . $hostArg . '</comment>',
-            );
+            ));
         } else {
-            $io->writeln('  <fg=gray>Fix the steps above, then re-run</> <comment>php pinoox pinroll:check' . $hostArg . '</comment>');
-            $io->writeln('  <fg=gray>or reconnect:</> <comment>php pinoox pinroll:connect' . $hostArg . ' --reset</comment>');
+            $io->writeln(CliBin::rewrite('  <fg=gray>Fix the steps above, then re-run</> <comment>php pinoox pinroll:check' . $hostArg . '</comment>'));
+            $io->writeln(CliBin::rewrite('  <fg=gray>or reconnect:</> <comment>php pinoox pinroll:connect' . $hostArg . ' --reset</comment>'));
         }
     }
 
@@ -347,19 +348,19 @@ final class PinrollCli
             $io->writeln('  <fg=green>Uploaded</> pingate.php via transport');
             $io->newLine();
             $io->writeln('  Go live (push + install):');
-            $io->writeln('  <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>');
+            $io->writeln(CliBin::rewrite('  <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>'));
         } elseif ($zip !== '') {
             $io->section('Do this now');
-            $io->writeln([
+            $io->writeln(CliBin::rewriteLines([
                 '  <fg=yellow>1.</> Extract <comment>' . self::escape(self::relPath($zip)) . '</comment>',
                 '     into <comment>' . self::escape($extractTo !== '' ? $extractTo : 'public_html/') . '</comment>',
                 '  <fg=yellow>2.</> <comment>php pinoox pinroll:check' . $hostArg . '</comment>',
                 '  <fg=yellow>3.</> <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>',
-            ]);
+            ]));
         } else {
             $io->newLine();
             $io->writeln('  Go live (push + install):');
-            $io->writeln('  <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>');
+            $io->writeln(CliBin::rewrite('  <comment>php pinoox pinroll:deploy' . $hostArg . '</comment>'));
         }
     }
 

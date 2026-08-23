@@ -52,3 +52,25 @@ it('builds host upload path from label', function () {
 it('resolves default label from configured gate.label', function () {
     expect(GateTokenRegistry::labelFromHost(['gate' => ['label' => 'Ali.Dev']]))->toBe('ali.dev');
 });
+
+it('accepts the stored hash as bearer (PINROLL_TOKEN from tokens/{label}.php)', function () {
+    $root = sys_get_temp_dir() . '/pinroll-token-hash-' . uniqid('', true);
+    mkdir($root, 0777, true);
+
+    $plain = TokenGenerator::token();
+    GateTokenRegistry::writeTokenFile($root, 'yoose', $plain);
+    $hash = TokenGenerator::hashToken($plain);
+
+    expect(GateTokenRegistry::verifyPlainToken($plain, $root))->toBeTrue()
+        ->and(GateTokenRegistry::verifyPlainToken($hash, $root))->toBeTrue()
+        ->and(TokenGenerator::matchesStoredHash($hash, $hash))->toBeTrue();
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST,
+    );
+    foreach ($iterator as $item) {
+        $item->isDir() ? rmdir($item->getPathname()) : unlink($item->getPathname());
+    }
+    rmdir($root);
+});

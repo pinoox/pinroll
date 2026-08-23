@@ -104,3 +104,17 @@ test('host env overlays PINROLL_DB_* and PINROLL_ADMIN_* onto production provisi
         unset($_ENV[$key]);
     }
 });
+
+test('host env strips quotes from PINROLL_TOKEN so quoted .env values still overlay', function () {
+    putenv('PINROLL_TOKEN="quoted-secret-token"');
+    $_ENV['PINROLL_TOKEN'] = '"quoted-secret-token"';
+
+    $host = HostEnv::overlay('production', [
+        'gate' => ['token' => 'from-overlay'],
+    ]);
+
+    expect($host['gate']['token'])->toBe('quoted-secret-token');
+
+    putenv('PINROLL_TOKEN');
+    unset($_ENV['PINROLL_TOKEN']);
+});

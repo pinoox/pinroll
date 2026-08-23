@@ -213,11 +213,31 @@ final class HostEnv
 
         foreach ($keys as $key) {
             $value = $_ENV[$key] ?? $_SERVER[$key] ?? getenv($key);
-            if (is_string($value) && $value !== '') {
-                return $value;
+            $normalized = self::normalizeValue($value);
+            if ($normalized !== null) {
+                return $normalized;
             }
         }
 
         return null;
+    }
+
+    private static function normalizeValue(mixed $value): ?string
+    {
+        if (!is_string($value) || $value === '') {
+            return null;
+        }
+
+        $value = trim($value);
+        if (
+            (str_starts_with($value, '"') && str_ends_with($value, '"'))
+            || (str_starts_with($value, "'") && str_ends_with($value, "'"))
+        ) {
+            $value = substr($value, 1, -1);
+        }
+
+        $value = trim($value);
+
+        return $value !== '' ? $value : null;
     }
 }
