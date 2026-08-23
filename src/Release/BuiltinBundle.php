@@ -91,7 +91,7 @@ final class BuiltinBundle
             'scope' => 'app',
             'build' => [
                 ['type' => 'frontend', 'command' => 'fe:build --no-ansi'],
-                ['type' => 'app', 'command' => 'pinx:build --yes --no-ansi'],
+                ['type' => 'app', 'command' => 'build --yes --no-ansi'],
             ],
             'depends_check' => true,
         ];

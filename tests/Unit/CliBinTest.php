@@ -9,7 +9,9 @@ test('cli bin rewrites php pinoox hints when PINOOX_CLI_INVOKE is pinx', functio
 
     expect(CliBin::isPinx())->toBeTrue()
         ->and(CliBin::cmd('pinroll:check'))->toBe('pinx pinroll:check')
-        ->and(CliBin::rewrite('php pinoox pinroll:deploy'))->toBe('pinx pinroll:deploy');
+        ->and(CliBin::rewrite('php pinoox pinroll:deploy'))->toBe('pinx pinroll:deploy')
+        ->and(CliBin::adaptCommand('pinx:build --yes --no-ansi'))->toBe('build --yes --no-ansi')
+        ->and(CliBin::adaptCommand('fe:build com_pinoox_orbit --no-ansi'))->toBe('fe:build --no-ansi');
 
     if (is_string($previous) && $previous !== '') {
         putenv('PINOOX_CLI_INVOKE=' . $previous);

@@ -5,6 +5,7 @@ namespace Pinoox\Pinroll\Release;
 use Pinoox\Pinroll\Contract\PathResolverInterface;
 use Pinoox\Pinroll\Exception\PinrollException;
 use Pinoox\Pinroll\Support\AppBuildPaths;
+use Pinoox\Pinroll\Support\CliBin;
 use Pinoox\Pinroll\Support\Config;
 use Pinoox\Pinroll\Support\ProjectPaths;
 use Pinoox\Pinroll\Support\PushProgress;
@@ -207,10 +208,9 @@ final class ReleaseBuilder
 
     private function execPinoox(string $command, string $outputDir): void
     {
+        unset($outputDir);
         $root = $this->paths->root();
-        $pinoox = is_file($root . '/pinoox') ? $root . '/pinoox' : 'pinoox';
-        $full = 'php -d output_buffering=0 -d implicit_flush=1 '
-            . escapeshellarg($pinoox) . ' --no-interaction ' . $command;
+        $full = CliBin::phpLine($root, $command);
 
         $descriptors = [
             1 => ['pipe', 'w'],
