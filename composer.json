@@ -1,6 +1,6 @@
 {
   "name": "pinoox/pinroll",
-    "version": "1.6.10",
+    "version": "1.6.11",
   "description": "Pinroll — atomic release rollout, rollback, and PinGate delivery for Pinoox",
   "type": "library",
   "license": "MIT",
