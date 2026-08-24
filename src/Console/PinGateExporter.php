@@ -90,28 +90,23 @@ final class PinGateExporter
      */
     private function writeSingleEntry(string $destination, array $gateConfig): void
     {
-        $bootstrap = (string) file_get_contents(self::TEMPLATE_DIR . '/bootstrap.php');
-        $bootstrap = preg_replace('/^<\?php\s*(?:declare\(strict_types=1\);\s*)?/', '', $bootstrap) ?? $bootstrap;
-        $exported = var_export($gateConfig, true);
+        $samplePath = self::TEMPLATE_DIR . '/pingate.php';
+        if (!is_file($samplePath)) {
+            throw new PinrollException(
+                'PinGate sample is required: resources/pingate/pingate.php is missing. Reinstall pinoox/pinroll.',
+            );
+        }
 
-        $contents = <<<PHP
-<?php
-declare(strict_types=1);
+        $sample = (string) file_get_contents($samplePath);
+        $needle = '$PINROLL_GATE = [];';
+        $pos = strpos($sample, $needle);
+        if ($pos === false) {
+            throw new PinrollException(
+                'PinGate sample is invalid: expected $PINROLL_GATE = []; in resources/pingate/pingate.php.',
+            );
+        }
 
-\$PINROLL_GATE = {$exported};
-
-if (defined('PINROLL_GATE_AS_CONFIG')) {
-    return \$PINROLL_GATE;
-}
-
-if (!function_exists('pinroll_pingate_run')) {
-{$bootstrap}
-}
-
-pinroll_pingate_run(__DIR__, \$PINROLL_GATE);
-
-PHP;
-
+        $contents = substr_replace($sample, '$PINROLL_GATE = ' . var_export($gateConfig, true) . ';', $pos, strlen($needle));
         if (file_put_contents($destination, $contents) === false) {
             throw new PinrollException('Unable to write PinGate file: ' . $destination);
         }

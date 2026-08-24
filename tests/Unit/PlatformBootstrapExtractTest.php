@@ -1,6 +1,7 @@
 <?php
 
-require_once dirname(__DIR__, 2) . '/resources/pingate/bootstrap.php';
+define('PINROLL_PINGATE_NO_RUN', true);
+require_once dirname(__DIR__, 2) . '/resources/pingate/pingate.php';
 
 test('platform zip helper rejects zip slip and preserves pingate.php', function () {
     $tmp = sys_get_temp_dir() . '/pinroll-platform-' . bin2hex(random_bytes(4));

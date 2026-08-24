@@ -118,6 +118,15 @@ test('htaccess snippet includes dir prefix', function () {
     expect(PinGateExporter::htaccessSnippetContent(''))->not->toContain('gate/');
 });
 
+test('PinGate sample is a complete pingate.php', function () {
+    $sample = dirname(__DIR__, 2) . '/resources/pingate/pingate.php';
+    expect(is_file($sample))->toBeTrue();
+    $contents = (string) file_get_contents($sample);
+    expect($contents)->toContain('$PINROLL_GATE = [];')
+        ->and($contents)->toContain('function pinroll_pingate_run')
+        ->and($contents)->toContain('pinroll_pingate_run(__DIR__, $PINROLL_GATE)');
+});
+
 test('exported pingate.php is a single file with config guard and query routing', function () {
     $fixture = new Pinoox\Pinroll\Tests\Support\ProjectFixture();
     $paths = new Pinoox\Pinroll\Support\NativePathResolver($fixture->root);

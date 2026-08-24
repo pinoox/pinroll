@@ -3,8 +3,18 @@
 declare(strict_types=1);
 
 /**
- * PinGate HTTP runtime — compiled into a single pingate.php next to index.php.
- * Platform root is __DIR__ of pingate.php (not a parent of a former gate/ folder).
+ * PinGate sample — place next to index.php. Pinroll only fills $PINROLL_GATE.
+ */
+$PINROLL_GATE = [];
+
+if (defined('PINROLL_GATE_AS_CONFIG')) {
+    return $PINROLL_GATE;
+}
+
+if (!function_exists('pinroll_pingate_run')) {
+
+/**
+ * PinGate HTTP runtime. Platform root is __DIR__ of this file.
  */
 function pinroll_pingate_run(string $root, array $gateConfig = []): void
 {
@@ -3285,3 +3295,11 @@ function pinroll_validate_provision_payload(array $db, array $user, string $lang
 }
 
 
+
+}
+
+if (defined('PINROLL_PINGATE_NO_RUN')) {
+    return;
+}
+
+pinroll_pingate_run(__DIR__, $PINROLL_GATE);
