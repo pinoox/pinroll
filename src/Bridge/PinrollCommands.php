@@ -9,8 +9,23 @@ namespace Pinoox\Pinroll\Bridge;
  */
 final class PinrollCommands
 {
+    private static bool $registered = false;
+
     public static function all(): array
     {
+        if (!self::$registered) {
+            self::$registered = true;
+            spl_autoload_register(static function (string $class): void {
+                if (str_starts_with($class, 'Pinoox\\Terminal\\Pinroll\\')) {
+                    $relative = substr($class, strlen('Pinoox\\Terminal\\Pinroll\\'));
+                    $file = __DIR__ . '/../Terminal/Pinroll/' . str_replace('\\', '/', $relative) . '.php';
+                    if (is_file($file)) {
+                        require_once $file;
+                    }
+                }
+            });
+        }
+
         return [
             \Pinoox\Terminal\Pinroll\PinrollInitCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollConnectCommand::class,
@@ -30,6 +45,7 @@ final class PinrollCommands
             \Pinoox\Terminal\Pinroll\PinrollBuildCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollStatusCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollHistoryCommand::class,
+            \Pinoox\Terminal\Pinroll\PinrollLogsCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollRollbackCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollCleanupCommand::class,
             \Pinoox\Terminal\Pinroll\PinrollInstallCommand::class,

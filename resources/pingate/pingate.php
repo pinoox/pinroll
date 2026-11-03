@@ -113,6 +113,16 @@ function pinroll_pingate_run(string $root, array $gateConfig = []): void
         return;
     }
 
+    if (($method === 'GET' || $method === 'POST') && $path === 'logs') {
+        $input = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($input) || $input === []) {
+            $input = array_merge($_GET, is_array($_POST) ? $_POST : []);
+        }
+        pinroll_handle_direct_logs($root, $gateConfig, is_array($input) ? $input : []);
+
+        return;
+    }
+
     if ($method === 'POST' && str_starts_with($path, 'push/')) {
         pinroll_handle_direct_push($root, $gateConfig, $path);
 
@@ -2035,6 +2045,26 @@ function pinroll_handle_direct_cleanup(string $root, array $gateConfig, array $i
     echo json_encode(['success' => true, 'data' => $result], JSON_UNESCAPED_UNICODE);
 }
 
+function pinroll_handle_direct_logs(string $root, array $gateConfig, array $input): void
+{
+    try {
+        $root = pinroll_resolve_platform_root($root, $gateConfig);
+    } catch (Throwable $e) {
+        pinroll_gate_json_error(503, $e->getMessage());
+
+        return;
+    }
+
+    try {
+        $result = pinroll_standalone_logs($root, $input);
+        header('Content-Type: application/json');
+        header('X-Content-Type-Options: nosniff');
+        echo json_encode(['success' => true, 'data' => $result], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $e) {
+        pinroll_gate_json_error((int) ($e->getCode() ?: 500), $e->getMessage());
+    }
+}
+
 function pinroll_handle_direct_push(string $root, array $gateConfig, string $path): void
 {
     try {
@@ -2112,8 +2142,95 @@ function pinroll_pincore_gate_handle(
         $method === 'GET' && $path === 'history' => ['history' => []],
         $method === 'POST' && $path === 'setup' => pinroll_pincore_setup($root, $input),
         $method === 'POST' && $path === 'check-db' => pinroll_pincore_check_db($root, $input),
+        ($method === 'GET' || $method === 'POST') && $path === 'logs' => pinroll_standalone_logs($root, $input),
         default => throw new RuntimeException('Unknown PinGate route: ' . $path),
     };
+}
+
+/**
+ * @param array<string, mixed> $input
+ * @return array<string, mixed>
+ */
+function pinroll_standalone_logs(string $root, array $input): array
+{
+    if (class_exists(\Pinoox\Pinroll\Support\HostLogs::class, true)) {
+        return \Pinoox\Pinroll\Support\HostLogs::handle($root, $input);
+    }
+
+    $root = rtrim(str_replace('\\', '/', $root), '/');
+    $file = trim((string) ($input['file'] ?? ''));
+
+    if ($file !== '') {
+        $clean = str_replace('\\', '/', $file);
+        if (str_contains($clean, '..') || str_contains($clean, "\0")) {
+            throw new RuntimeException('Invalid log file name: ' . $file, 400);
+        }
+        $target = is_file($root . '/storage/logs/' . $clean)
+            ? $root . '/storage/logs/' . $clean
+            : (is_file($root . '/' . $clean) ? $root . '/' . $clean : null);
+        if ($target === null) {
+            throw new RuntimeException('Log file not found: ' . $file, 404);
+        }
+
+        $linesWanted = isset($input['lines']) ? max(1, min(2000, (int) $input['lines'])) : 100;
+        $content = (string) file_get_contents($target);
+        $all = explode("\n", str_replace("\r\n", "\n", $content));
+        while (!empty($all) && end($all) === '') {
+            array_pop($all);
+        }
+        $slice = count($all) > $linesWanted ? array_slice($all, -$linesWanted) : $all;
+
+        return [
+            'file' => basename($target),
+            'path' => str_replace($root . '/', '', $target),
+            'size' => filesize($target) ?: 0,
+            'total_lines' => count($all),
+            'lines_returned' => count($slice),
+            'lines' => array_values($slice),
+            'content' => implode("\n", $slice),
+        ];
+    }
+
+    $files = [];
+    $logsDir = $root . '/storage/logs';
+    if (is_dir($logsDir)) {
+        $entries = @scandir($logsDir) ?: [];
+        foreach ($entries as $e) {
+            if ($e === '.' || $e === '..' || !str_ends_with($e, '.log')) {
+                continue;
+            }
+            $p = $logsDir . '/' . $e;
+            $files[] = [
+                'name' => $e,
+                'path' => 'storage/logs/' . $e,
+                'type' => 'app',
+                'size' => filesize($p) ?: 0,
+                'size_formatted' => round((filesize($p) ?: 0) / 1024, 1) . ' KB',
+                'modified_at' => filemtime($p) ?: 0,
+                'modified_formatted' => date('Y-m-d H:i:s', filemtime($p) ?: 0),
+            ];
+        }
+    }
+
+    if (is_file($root . '/error_log')) {
+        $p = $root . '/error_log';
+        $files[] = [
+            'name' => 'error_log',
+            'path' => 'error_log',
+            'type' => 'server',
+            'size' => filesize($p) ?: 0,
+            'size_formatted' => round((filesize($p) ?: 0) / 1024, 1) . ' KB',
+            'modified_at' => filemtime($p) ?: 0,
+            'modified_formatted' => date('Y-m-d H:i:s', filemtime($p) ?: 0),
+        ];
+    }
+
+    usort($files, static fn ($a, $b) => $b['modified_at'] <=> $a['modified_at']);
+
+    return [
+        'total' => count($files),
+        'files' => $files,
+    ];
 }
 
 /**

@@ -237,6 +237,28 @@ final class PinGateClient
     }
 
     /**
+     * Query or retrieve host / server logs via PinGate.
+     *
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    public static function logs(string $gateUrlBase, string $token, array $options = []): array
+    {
+        $response = self::request('POST', GateUrl::route($gateUrlBase, 'logs'), $token, $options, 60);
+
+        if (!($response['success'] ?? false)) {
+            throw new PinrollException((string) ($response['error'] ?? 'PinGate logs request failed.'));
+        }
+
+        $data = $response['data'] ?? [];
+        if (!is_array($data)) {
+            throw new PinrollException('PinGate logs returned invalid response.');
+        }
+
+        return $data;
+    }
+
+    /**
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */

@@ -10,6 +10,7 @@ use Pinoox\Pinroll\Console\PinGateExporter;
 use Pinoox\Pinroll\Rollout\RolloutEngine;
 use Pinoox\Pinroll\Rollout\RolloutSession;
 use Pinoox\Pinroll\Support\Config;
+use Pinoox\Pinroll\Support\HostLogs;
 use Pinoox\Pinroll\Support\IncomingRelease;
 use Pinoox\Pinroll\Support\StorageCleaner;
 use Pinoox\Pinroll\Host\HookRunner;
@@ -56,6 +57,7 @@ final class PinGateHttpHandler
             $method === 'GET' && $path === 'history' => $this->handleHistory(),
             $method === 'POST' && $path === 'setup' => $this->handleSetup($input),
             $method === 'POST' && $path === 'check-db' => $this->handleCheckDb($input),
+            ($method === 'GET' || $method === 'POST') && $path === 'logs' => $this->handleLogs($input),
             default => throw new PinrollException('Unknown PinGate route: ' . $path, 404),
         };
     }
@@ -256,6 +258,15 @@ final class PinGateHttpHandler
         ], IncomingRelease::list($incoming));
 
         return ['releases' => $releases];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    private function handleLogs(array $input): array
+    {
+        return HostLogs::handle($this->paths->root(), $input);
     }
 
     /**
