@@ -9,6 +9,7 @@ use Pinoox\Pinroll\Release\ReleaseBundle;
 use Pinoox\Pinroll\Release\ReleaseManifest;
 use Pinoox\Pinroll\Rollout\RolloutSession;
 use Pinoox\Pinroll\Support\HostDir;
+use Pinoox\Pinroll\Support\HostLogs;
 use Pinoox\Pinroll\Support\IncomingRelease;
 use Pinoox\Pinroll\Support\NativePathResolver;
 use Pinoox\Pinroll\Support\PinrollAutoloader;
@@ -565,6 +566,40 @@ final class DeployRunner
     public function history(?string $targetName = null): array
     {
         return Pinroll::engine()->history()->all();
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    public function logs(?string $targetName = null, array $options = []): array
+    {
+        $root = Pinroll::paths()->root();
+
+        if ($targetName === 'local' || !empty($options['local'])) {
+            return HostLogs::handle($root, $options);
+        }
+
+        $targetName = $targetName ?? Pinroll::hosts()->default();
+        $raw = Pinroll::hosts()->raw($targetName);
+        $resolved = Pinroll::hosts()->resolve($targetName);
+        $transport = (string) ($resolved['transport'] ?? 'pinion');
+
+        if ($transport === 'local') {
+            return HostLogs::handle($root, $options);
+        }
+
+        $gate = HostGate::credentials($raw);
+        $gateUrl = $gate['url'] !== '' ? $gate['url'] : (string) ($resolved['gate_url'] ?? '');
+        $token = $gate['token'] !== '' ? $gate['token'] : (string) ($resolved['token'] ?? '');
+
+        if ($gateUrl === '' || $token === '') {
+            throw new PinrollException(implode("\n", HostGate::setupGuide($targetName)));
+        }
+
+        $options['host'] = $targetName;
+
+        return PinGateClient::logs($gateUrl, $token, $options);
     }
 
     /**

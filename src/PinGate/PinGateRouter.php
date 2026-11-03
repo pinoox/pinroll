@@ -32,6 +32,8 @@ final class PinGateRouter
             'POST /rollback',
             'POST /cleanup',
             'GET /history',
+            'GET /logs',
+            'POST /logs',
         ];
     }
 }

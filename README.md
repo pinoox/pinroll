@@ -128,6 +128,7 @@ php pinoox pinroll:pull --server=https://releases.example.com
 - `pinroll:setup` — post-deploy migrate + patch (add `--seed`, `--config`, `--dry-run`)
 - `pinroll:install` — install a staged release (`pinroll:apply` is a deprecated alias)
 - `pinroll:rollback` — switch the host back to a previous release
+- `pinroll:logs` — view or list host / server logs (`--json` for AI Agent ingestion, `--file=`, `--latest`, `--lines=`, `--type=app|server|pinroll`)
 - `pinroll:cleanup` — prune local/remote archives by `keep` / `store`
 - `pinroll:gate` — rebuild/upload a single `pingate.php` (`--kit` / `-z` zip; `--no-upload` keep local)
 - `pinroll:pincore` — zip + upload `vendor/pinoox/pincore`, extract via PinGate (`ftp` / `ssh` / `pinion`)
